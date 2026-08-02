@@ -1,0 +1,25 @@
+{
+  "name": "herdr-control",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "A T3 Code-inspired control plane for Herdr sessions, built on the Collie bridge architecture",
+  "scripts": {
+    "dev": "bun run bridge/index.ts",
+    "dev:bridge": "bun --watch bridge/index.ts",
+    "dev:web": "cd web && bun run dev",
+    "build": "bun install && cd web && bun install && cd .. && bun run typecheck && cd web && bun run build",
+    "build:web": "cd web && bun run build",
+    "test": "bun test ./bridge && cd web && bun run test",
+    "typecheck": "bunx tsc --noEmit && cd web && bun run typecheck"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/web-push": "^3.6.4",
+    "typescript": "^6.0.3"
+  },
+  "optionalDependencies": {
+    "web-push": "^3.6.7"
+  }
+}

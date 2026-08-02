@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Versioning guard. Install with: scripts/install-hooks.sh (sets core.hooksPath).
+# 1) versions must be consistent (check-version.sh)
+# 2) if functional code changed, the canonical version must differ from HEAD (i.e. you bumped it)
+# Override a single commit with: SKIP_VERSION_CHECK=1 git commit …
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+if [ "${SKIP_VERSION_CHECK:-}" = "1" ]; then
+  echo "pre-commit: SKIP_VERSION_CHECK=1 — skipping version guard" >&2
+  exit 0
+fi
+
+# (1) consistency — inspect the index, because that is the content this commit will contain.
+staged_blob() { git show ":$1" 2>/dev/null; }
+toml_v="$(staged_blob herdr-plugin.toml | sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+pkg_v="$(staged_blob package.json | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+web_v="$(staged_blob web/package.json | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+log_v="$(staged_blob CHANGELOG.md | sed -n 's/^##[[:space:]]*\[\([0-9][^]]*\)\].*/\1/p' | head -1)"
+if [ -z "$toml_v" ] || [ "$pkg_v" != "$toml_v" ] || [ "$web_v" != "$toml_v" ] || [ "$log_v" != "$toml_v" ]; then
+  echo "✗ pre-commit: staged version files and CHANGELOG must carry the same version." >&2
+  exit 1
+fi
+
+# (2) bump-on-change — any functional path in this set requires a version bump.
+staged="$(git diff --cached --name-only)"
+if echo "$staged" | grep -qE '^(bridge/|web/src/|web/public/|web/vite\.config\.ts|web/index\.html|web/package\.json|scripts/|systemd/|package\.json|herdr-plugin\.toml)'; then
+  read_ver() { sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1; }
+  cur="$toml_v"
+  prev="$(git show HEAD:herdr-plugin.toml 2>/dev/null | read_ver || true)"
+  if [ -n "${prev:-}" ]; then
+    if [ "$cur" = "$prev" ]; then
+      cat >&2 <<EOF
+✗ pre-commit: functional code changed but the version is still $cur.
+  Bump version in herdr-plugin.toml, package.json, web/package.json and add a CHANGELOG entry.
+  (Doc-only changes don't need a bump. Override once with SKIP_VERSION_CHECK=1 git commit.)
+EOF
+      exit 1
+    fi
+    # Monotonicity: compare SemVer with Bun, which is already a required runtime. macOS's default
+    # `sort` lacks GNU `-V`, so keeping the comparison here portable matters for local commits.
+    if ! bun -e '
+const parse = (value) => {
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value);
+  if (!match) return null;
+  return { core: match.slice(1, 4).map(Number), pre: match[4]?.split(".") ?? null };
+};
+const compare = (left, right) => {
+  for (let i = 0; i < 3; i++) if (left.core[i] !== right.core[i]) return left.core[i] - right.core[i];
+  if (left.pre === null || right.pre === null) return left.pre === right.pre ? 0 : left.pre === null ? 1 : -1;
+  for (let i = 0; i < Math.max(left.pre.length, right.pre.length); i++) {
+    if (left.pre[i] === undefined || right.pre[i] === undefined) return left.pre[i] === undefined ? -1 : 1;
+    if (left.pre[i] === right.pre[i]) continue;
+    const leftNumeric = /^\d+$/.test(left.pre[i]);
+    const rightNumeric = /^\d+$/.test(right.pre[i]);
+    if (leftNumeric && rightNumeric) return Number(left.pre[i]) - Number(right.pre[i]);
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return left.pre[i] < right.pre[i] ? -1 : 1;
+  }
+  return 0;
+};
+const [previous, current] = process.argv.slice(1);
+const parsedPrevious = parse(previous);
+const parsedCurrent = parse(current);
+process.exit(parsedPrevious && parsedCurrent && compare(parsedCurrent, parsedPrevious) > 0 ? 0 : 1);
+' -- "$prev" "$cur"; then
+      cat >&2 <<EOF
+✗ pre-commit: invalid or non-increasing version ($prev → $cur). The new version must be valid SemVer and greater than the last.
+EOF
+      exit 1
+    fi
+  fi
+fi
+
+exit 0

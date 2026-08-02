@@ -1,0 +1,13 @@
+node_modules/
+web/node_modules/
+web/dist/
+web/dist-staging/
+web/test-results/
+web/playwright-report/
+web/artifacts/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.pid
