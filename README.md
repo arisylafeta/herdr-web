@@ -4,13 +4,16 @@ Herdr Mobile Relay is the host-side companion for remote Herdr clients. It runs 
 translates a bounded HTTP and WebSocket API into Herdr socket operations, and can publish that API
 privately through Tailscale Serve.
 
+Native client repository: [Herdr Mobile](https://github.com/benkraus/herdr-mobile).
+
 The repository is packaged as a Herdr plugin. Its registered plugin ID is `herdr.control`, retained
 for compatibility with existing installations and configuration directories.
 
 ## What it provides
 
 - A responsive browser control surface served by the relay itself.
-- A native-client API used by the separate `herdr-mobile` application.
+- A native-client API used by the separate
+  [Herdr Mobile](https://github.com/benkraus/herdr-mobile) application.
 - Live terminal frames with device-sized terminal control.
 - Workspace, worktree, tab, pane, and multi-session navigation.
 - Authorized terminal input and structural mutations.
