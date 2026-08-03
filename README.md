@@ -16,6 +16,7 @@ for compatibility with existing installations and configuration directories.
   [Herdr Mobile](https://github.com/benkraus/herdr-mobile) application.
 - Live terminal frames with device-sized terminal control.
 - Workspace, worktree, tab, pane, and multi-session navigation.
+- Bounded workspace file previews and read-only Git status/diff inspection.
 - Authorized terminal input and structural mutations.
 - Optional Web Push notifications for agent state changes.
 - Append-only auditing of remote write operations.
@@ -47,10 +48,12 @@ Tailscale normally establishes a direct peer-to-peer WireGuard path. It may tran
 DERP relay when a direct path cannot be established; this application does not operate a central
 Internet relay of its own.
 
-The relay uses REST for snapshots, bounded reads, and mutations. A WebSocket carries structural
-change notifications and native terminal frames. The selected terminal is driven at the client’s
-measured columns and rows, which lets smaller devices navigate a live TUI instead of viewing a
-desktop-width text dump.
+The relay uses REST for snapshots, bounded workspace/file/Git reads, and mutations. Workspace
+inspection resolves roots from Herdr's authoritative workspace state, rejects path traversal and
+symlink reads, and caps file and Git output sizes. A WebSocket carries structural change
+notifications and native terminal frames. The selected terminal is driven at the client’s measured
+columns and rows, which lets smaller devices navigate a live TUI instead of viewing a desktop-width
+text dump.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for ownership and protocol boundaries.
 

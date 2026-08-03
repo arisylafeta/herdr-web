@@ -5,6 +5,7 @@ import {
   closeScopePaneIds,
   CreateDeduplicator,
   deviceAuth,
+  decodeWorkspaceId,
   isHostAllowed,
   paneReadResponse,
   parseCreateTabBody,
@@ -28,6 +29,7 @@ import {
   sendReplySteps,
   serveStatic,
   startServer,
+  workspaceRootSource,
   type ReplySender,
 } from "./server.ts";
 import type { Config } from "./config.ts";
@@ -115,6 +117,72 @@ describe("closeScopePaneIds", () => {
       "agent-a",
       "agent-b",
     ]);
+  });
+});
+
+describe("workspaceRootSource", () => {
+  test("keeps every pane CWD so root resolution can reject ambiguous repositories", () => {
+    const engine = {
+      current: () => ({
+        workspaces: [{ workspaceId: "space-a" }],
+        agents: [
+          {
+            workspaceId: "space-a",
+            cwd: "/repos/expected",
+            focused: false,
+          },
+          {
+            workspaceId: "space-a",
+            cwd: "/repos/unrelated",
+            focused: true,
+          },
+        ],
+        shellPanes: [],
+      }),
+    } as unknown as Parameters<typeof workspaceRootSource>[0];
+
+    expect(workspaceRootSource(engine, "space-a")).toEqual({
+      worktreeRoot: undefined,
+      paneCwds: ["/repos/expected", "/repos/unrelated"],
+    });
+  });
+
+  test("scopes inspection to a selected pane in a multi-repository workspace", () => {
+    const engine = {
+      current: () => ({
+        workspaces: [{ workspaceId: "space-a" }],
+        agents: [
+          {
+            paneId: "pane-app",
+            workspaceId: "space-a",
+            cwd: "/repos/app",
+          },
+          {
+            paneId: "pane-relay",
+            workspaceId: "space-a",
+            cwd: "/repos/relay",
+          },
+        ],
+        shellPanes: [],
+      }),
+    } as unknown as Parameters<typeof workspaceRootSource>[0];
+
+    expect(workspaceRootSource(engine, "space-a", "pane-relay")).toEqual({
+      worktreeRoot: undefined,
+      paneCwds: ["/repos/relay"],
+    });
+    expect(workspaceRootSource(engine, "space-a", "pane-other")).toBeNull();
+  });
+});
+
+describe("decodeWorkspaceId", () => {
+  test("turns malformed percent encodings into a controlled 400 inspection error", () => {
+    expect(() => decodeWorkspaceId("bad%zz")).toThrow();
+    try {
+      decodeWorkspaceId("bad%zz");
+    } catch (error) {
+      expect(error).toMatchObject({ status: 400 });
+    }
   });
 });
 

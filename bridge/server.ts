@@ -7,16 +7,20 @@ import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
 import type { LiveUpdateHub } from "./live-updates.ts";
 import type { NotifyPrefs, NotifyPrefsStore } from "./notify-prefs.ts";
 import { ensurePrivateDirectory, writePrivateFile } from "./private-fs.ts";
-import {
-  isTrustedPushSubscription,
-  type Push,
-  type PushSubscriptionOwner,
-} from "./push.ts";
+import { isTrustedPushSubscription, type Push, type PushSubscriptionOwner } from "./push.ts";
 import type { SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
 import { observeTerminalFrames } from "./terminal-observer.ts";
 import type { UpdateMonitor } from "./update.ts";
 import type { StateEngine } from "./state-engine.ts";
+import {
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  readWorkspaceGitDiff,
+  readWorkspaceGitStatus,
+  resolveWorkspaceRoot,
+  WorkspaceInspectionError,
+} from "./workspace-inspection.ts";
 import type {
   ActionResponse,
   BridgeConfig,
@@ -25,6 +29,7 @@ import type {
   PaneReadResponse,
   SnapshotResponse,
   UploadResponse,
+  WorkspaceFilesResponse,
   WorktreeCreateResponse,
 } from "./types.ts";
 
@@ -97,6 +102,10 @@ const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|input|keys|upload|close))?$
 const TAB_ROUTE = /^\/api\/tab\/([^/]+)$/;
 const WORKTREE_ROUTE = /^\/api\/worktree\/([^/]+)$/;
 const PANE_FOCUS_ROUTE = /^\/api\/focus\/([^/]+)$/;
+const WORKSPACE_FILES_ROUTE = /^\/api\/workspace\/([^/]+)\/files$/;
+const WORKSPACE_FILE_ROUTE = /^\/api\/workspace\/([^/]+)\/file$/;
+const WORKSPACE_GIT_ROUTE = /^\/api\/workspace\/([^/]+)\/git$/;
+const WORKSPACE_DIFF_ROUTE = /^\/api\/workspace\/([^/]+)\/diff$/;
 
 interface LiveSocketData {
   session: string;
@@ -109,6 +118,43 @@ interface LiveSocketData {
     scroll(direction: "up" | "down", lines: number): boolean;
     close(): void;
   };
+}
+
+export function workspaceRootSource(
+  engine: StateEngine,
+  workspaceId: string,
+  paneId?: string,
+): { worktreeRoot: string | undefined; paneCwds: string[] } | null {
+  const snapshot = engine.current();
+  const workspace = snapshot.workspaces.find((candidate) => candidate.workspaceId === workspaceId);
+  if (!workspace) return null;
+  const workspacePanes = [...snapshot.agents, ...snapshot.shellPanes].filter(
+    (pane) => pane.workspaceId === workspaceId,
+  );
+  const panes = paneId
+    ? workspacePanes.filter((pane) => pane.paneId === paneId)
+    : workspacePanes;
+  if (paneId && panes.length === 0) return null;
+  return {
+    worktreeRoot: workspace.worktree?.checkoutPath,
+    paneCwds: panes.map((pane) => pane.cwd),
+  };
+}
+
+function workspaceInspectionFailure(error: unknown, acceptEncoding: string | null): Response {
+  if (error instanceof WorkspaceInspectionError) {
+    return jsonError(error.message, error.status, acceptEncoding);
+  }
+  console.error("[workspace] inspection failed", error);
+  return jsonError("workspace inspection failed", 500, acceptEncoding);
+}
+
+export function decodeWorkspaceId(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new WorkspaceInspectionError(400, "invalid workspace id encoding");
+  }
 }
 
 /** Whether an agent-status preference change made a previously muted kind eligible. */
@@ -133,11 +179,7 @@ class RequestDeduplicator<T> {
     private readonly now: () => number = Date.now,
   ) {}
 
-  run(
-    key: string,
-    signature: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
+  run(key: string, signature: string, operation: () => Promise<T>): Promise<T> {
     this.prune();
     const existing = this.entries.get(key);
     if (existing) {
@@ -252,7 +294,10 @@ export class PaneMutationQueue {
   run<T>(key: string, operation: () => Promise<T>): Promise<T> {
     const prior = this.tails.get(key) ?? Promise.resolve();
     const result = prior.catch(() => undefined).then(operation);
-    const tail = result.then(() => undefined, () => undefined);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
     this.tails.set(key, tail);
     void tail.finally(() => {
       if (this.tails.get(key) === tail) this.tails.delete(key);
@@ -277,6 +322,15 @@ export function startServer(opts: {
   const worktreeCreateDeduplicator = new WorktreeCreateDeduplicator();
   const actionDeduplicator = new ActionDeduplicator();
   const paneMutations = new PaneMutationQueue();
+  const inspectedWorkspaceRoot = async (
+    engine: StateEngine,
+    workspaceId: string,
+    paneId?: string,
+  ): Promise<string | null> => {
+    const source = workspaceRootSource(engine, workspaceId, paneId);
+    if (!source) return null;
+    return await resolveWorkspaceRoot(source.worktreeRoot, source.paneCwds);
+  };
   if (!isLoopbackBindHost(cfg.host)) {
     throw new Error(`refusing non-loopback COLLIE_HOST: ${cfg.host}`);
   }
@@ -321,19 +375,136 @@ export function startServer(opts: {
         if (!rt) return unknownSession();
         const { agents, shellPanes, workspaces, tabs, bridge } = rt.engine.current();
         const device = deviceAuth(req, cfg);
-        return json({
-          bridge,
-          // Only report device state when the feature is on, so an off deployment sends nothing new.
-          ...(device.enforced ? { device } : {}),
-          agents,
-          shellPanes,
-          workspaces,
-          tabs,
-          sessions: registry.list(),
-          notifications: { snoozedUntil: snooze.until() },
-          update: updateMonitor.status(),
-          ts: Date.now(),
-        } satisfies SnapshotResponse, req.headers.get("accept-encoding"));
+        return json(
+          {
+            bridge,
+            // Only report device state when the feature is on, so an off deployment sends nothing new.
+            ...(device.enforced ? { device } : {}),
+            agents,
+            shellPanes,
+            workspaces,
+            tabs,
+            sessions: registry.list(),
+            notifications: { snoozedUntil: snooze.until() },
+            update: updateMonitor.status(),
+            ts: Date.now(),
+          } satisfies SnapshotResponse,
+          req.headers.get("accept-encoding"),
+        );
+      }
+
+      // ── Read-only workspace browser and Git inspection ───────────────────
+      // The client supplies a workspace id, an optional pane id, and a workspace-relative file
+      // path. Pane scoping lets a multi-repository workspace follow the terminal the user selected.
+      // The bridge validates that pane against Herdr's authoritative snapshot; the inspection layer
+      // still rejects traversal, symlinks, oversized files, and unbounded command output.
+      const inspectionPaneId = url.searchParams.get("paneId") ?? undefined;
+      const workspaceFilesMatch = pathname.match(WORKSPACE_FILES_ROUTE);
+      if (workspaceFilesMatch && req.method === "GET") {
+        const denied = guard(req, cfg, "read");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        try {
+          const workspaceId = decodeWorkspaceId(workspaceFilesMatch[1]!);
+          const root = await inspectedWorkspaceRoot(rt.engine, workspaceId, inspectionPaneId);
+          if (!root)
+            return jsonError(
+              inspectionPaneId ? "pane not found in workspace" : "workspace not found",
+              404,
+              req.headers.get("accept-encoding"),
+            );
+          const files = await listWorkspaceFiles(root);
+          return json(
+            {
+              workspaceId,
+              root: files.root,
+              entries: files.entries,
+              truncated: files.truncated,
+            } satisfies WorkspaceFilesResponse,
+            req.headers.get("accept-encoding"),
+          );
+        } catch (error) {
+          return workspaceInspectionFailure(error, req.headers.get("accept-encoding"));
+        }
+      }
+
+      const workspaceFileMatch = pathname.match(WORKSPACE_FILE_ROUTE);
+      if (workspaceFileMatch && req.method === "GET") {
+        const denied = guard(req, cfg, "read");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        const path = url.searchParams.get("path");
+        if (!path)
+          return jsonError("file path is required", 400, req.headers.get("accept-encoding"));
+        try {
+          const workspaceId = decodeWorkspaceId(workspaceFileMatch[1]!);
+          const root = await inspectedWorkspaceRoot(rt.engine, workspaceId, inspectionPaneId);
+          if (!root)
+            return jsonError(
+              inspectionPaneId ? "pane not found in workspace" : "workspace not found",
+              404,
+              req.headers.get("accept-encoding"),
+            );
+          return json(
+            await readWorkspaceFile(workspaceId, root, path),
+            req.headers.get("accept-encoding"),
+          );
+        } catch (error) {
+          return workspaceInspectionFailure(error, req.headers.get("accept-encoding"));
+        }
+      }
+
+      const workspaceGitMatch = pathname.match(WORKSPACE_GIT_ROUTE);
+      if (workspaceGitMatch && req.method === "GET") {
+        const denied = guard(req, cfg, "read");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        try {
+          const workspaceId = decodeWorkspaceId(workspaceGitMatch[1]!);
+          const root = await inspectedWorkspaceRoot(rt.engine, workspaceId, inspectionPaneId);
+          if (!root)
+            return jsonError(
+              inspectionPaneId ? "pane not found in workspace" : "workspace not found",
+              404,
+              req.headers.get("accept-encoding"),
+            );
+          return json(
+            await readWorkspaceGitStatus(workspaceId, root),
+            req.headers.get("accept-encoding"),
+          );
+        } catch (error) {
+          return workspaceInspectionFailure(error, req.headers.get("accept-encoding"));
+        }
+      }
+
+      const workspaceDiffMatch = pathname.match(WORKSPACE_DIFF_ROUTE);
+      if (workspaceDiffMatch && req.method === "GET") {
+        const denied = guard(req, cfg, "read");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        const path = url.searchParams.get("path");
+        if (!path)
+          return jsonError("diff path is required", 400, req.headers.get("accept-encoding"));
+        try {
+          const workspaceId = decodeWorkspaceId(workspaceDiffMatch[1]!);
+          const root = await inspectedWorkspaceRoot(rt.engine, workspaceId, inspectionPaneId);
+          if (!root)
+            return jsonError(
+              inspectionPaneId ? "pane not found in workspace" : "workspace not found",
+              404,
+              req.headers.get("accept-encoding"),
+            );
+          return json(
+            await readWorkspaceGitDiff(workspaceId, root, path),
+            req.headers.get("accept-encoding"),
+          );
+        } catch (error) {
+          return workspaceInspectionFailure(error, req.headers.get("accept-encoding"));
+        }
       }
 
       // ── Structural creates: new tab / new space (each opens a fresh shell pane) ──
@@ -342,7 +513,15 @@ export function startServer(opts: {
         if (denied) return denied;
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
-        return createTab(rt.herdr, rt.engine, req, audit, deviceAuth(req, cfg).device, rt.name, createDeduplicator);
+        return createTab(
+          rt.herdr,
+          rt.engine,
+          req,
+          audit,
+          deviceAuth(req, cfg).device,
+          rt.name,
+          createDeduplicator,
+        );
       }
       const tabMatch = pathname.match(TAB_ROUTE);
       if (tabMatch && req.method === "PATCH") {
@@ -380,7 +559,14 @@ export function startServer(opts: {
         if (denied) return denied;
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
-        return createWorkspace(rt.herdr, req, audit, deviceAuth(req, cfg).device, rt.name, createDeduplicator);
+        return createWorkspace(
+          rt.herdr,
+          req,
+          audit,
+          deviceAuth(req, cfg).device,
+          rt.name,
+          createDeduplicator,
+        );
       }
       const workspaceMatch = pathname.match(/^\/api\/workspace\/([^/]+)$/);
       if (workspaceMatch && req.method === "DELETE") {
@@ -465,7 +651,15 @@ export function startServer(opts: {
         if (!action && req.method === "GET") return readPane(herdr, cfg, paneId, url, req);
         if (action === "reply" && req.method === "POST") {
           return replyPane(
-            herdr, cfg, paneId, req, audit, device, session, replyDeduplicator, paneMutations,
+            herdr,
+            cfg,
+            paneId,
+            req,
+            audit,
+            device,
+            session,
+            replyDeduplicator,
+            paneMutations,
           );
         }
         if (action === "input" && req.method === "POST") {
@@ -474,7 +668,8 @@ export function startServer(opts: {
         if (action === "keys" && req.method === "POST") {
           return keysPane(herdr, paneId, req, audit, device, session, paneMutations);
         }
-        if (action === "upload" && req.method === "POST") return uploadPane(cfg, paneId, req, audit, device, session);
+        if (action === "upload" && req.method === "POST")
+          return uploadPane(cfg, paneId, req, audit, device, session);
         if (action === "close" && req.method === "POST") {
           return closePane(herdr, paneId, req, audit, device, session, paneMutations);
         }
@@ -485,11 +680,14 @@ export function startServer(opts: {
       if (pathname === "/api/config") {
         const denied = guard(req, cfg, "read");
         if (denied) return denied;
-        return json({
-          push: push.enabled,
-          vapidPublicKey: push.publicKey,
-          build: await buildId(),
-        } satisfies BridgeConfig, req.headers.get("accept-encoding"));
+        return json(
+          {
+            push: push.enabled,
+            vapidPublicKey: push.publicKey,
+            build: await buildId(),
+          } satisfies BridgeConfig,
+          req.headers.get("accept-encoding"),
+        );
       }
       if (pathname === "/api/push-test" && req.method === "POST") {
         // The CLI routes its manual delivery through the live bridge so subscription state has one
@@ -660,10 +858,7 @@ export function startServer(opts: {
         const raw = String(rawMessage);
         const scroll = parseLiveScrollMessage(raw);
         if (scroll) {
-          if (
-            socket.data.canControl &&
-            socket.data.paneWatch?.paneId === scroll.paneId
-          ) {
+          if (socket.data.canControl && socket.data.paneWatch?.paneId === scroll.paneId) {
             socket.data.paneWatch.scroll(scroll.direction, scroll.lines);
           }
           return;
@@ -679,7 +874,8 @@ export function startServer(opts: {
           if (
             socket.data.paneWatch.cols === watch.cols &&
             socket.data.paneWatch.rows === watch.rows
-          ) return;
+          )
+            return;
           if (socket.data.paneWatch.resize(watch.cols, watch.rows)) return;
         }
         socket.data.paneWatch?.close();
@@ -694,26 +890,32 @@ export function startServer(opts: {
           rows: watch.rows,
           control: socket.data.canControl,
           onUp: () => {
-            socket.send(JSON.stringify({
-              type: "pane_stream_status",
-              paneId: watch.paneId,
-              live: true,
-            }));
+            socket.send(
+              JSON.stringify({
+                type: "pane_stream_status",
+                paneId: watch.paneId,
+                live: true,
+              }),
+            );
           },
           onFrame: (frame) => {
-            socket.send(JSON.stringify({
-              type: "pane_frame",
-              ...frame,
-            }));
+            socket.send(
+              JSON.stringify({
+                type: "pane_frame",
+                ...frame,
+              }),
+            );
           },
           onDown: (reason) => {
             if (!intentionalClose) {
-              socket.send(JSON.stringify({
-                type: "pane_stream_status",
-                paneId: watch.paneId,
-                live: false,
-                reason,
-              }));
+              socket.send(
+                JSON.stringify({
+                  type: "pane_stream_status",
+                  paneId: watch.paneId,
+                  live: false,
+                  reason,
+                }),
+              );
             }
           },
         });
@@ -743,7 +945,9 @@ export function startServer(opts: {
 
   console.log(`[bridge] listening on http://${cfg.host}:${cfg.port}  (poll ${cfg.pollMs}ms)`);
   if (cfg.host !== "127.0.0.1" && cfg.host !== "localhost") {
-    console.warn(`[bridge] WARNING: bound to ${cfg.host}, not loopback — identity checks may be bypassable`);
+    console.warn(
+      `[bridge] WARNING: bound to ${cfg.host}, not loopback — identity checks may be bypassable`,
+    );
   }
   if (cfg.deviceHeader) {
     console.log(
@@ -794,7 +998,8 @@ export function parseLiveWatchMessage(raw: string): {
     !Number.isInteger(rows) ||
     rows < MIN_TERMINAL_ROWS ||
     rows > MAX_TERMINAL_ROWS
-  ) return null;
+  )
+    return null;
   return { paneId: value.paneId, cols, rows };
 }
 
@@ -818,7 +1023,8 @@ export function parseLiveScrollMessage(raw: string): {
     !Number.isInteger(value.lines) ||
     value.lines < 1 ||
     value.lines > MAX_TERMINAL_ROWS
-  ) return null;
+  )
+    return null;
   return {
     paneId: value.paneId,
     direction: value.direction,
@@ -870,22 +1076,25 @@ async function readPane(
  */
 export function makePaneAnsiViewportAdaptive(text: string): string {
   let backgroundActive = false;
-  return text.split("\n").map((rawLine) => {
-    const hasCarriageReturn = rawLine.endsWith("\r");
-    const line = hasCarriageReturn ? rawLine.slice(0, -1) : rawLine;
-    const match = / +((?:\u001b\[[0-9;]*m)*)$/.exec(line);
-    if (!match || match.index === undefined) {
-      backgroundActive = scanBackgroundState(line, backgroundActive);
-      return rawLine;
-    }
+  return text
+    .split("\n")
+    .map((rawLine) => {
+      const hasCarriageReturn = rawLine.endsWith("\r");
+      const line = hasCarriageReturn ? rawLine.slice(0, -1) : rawLine;
+      const match = / +((?:\u001b\[[0-9;]*m)*)$/.exec(line);
+      if (!match || match.index === undefined) {
+        backgroundActive = scanBackgroundState(line, backgroundActive);
+        return rawLine;
+      }
 
-    const prefix = line.slice(0, match.index);
-    const suffix = match[1] ?? "";
-    const paddingHasBackground = scanBackgroundState(prefix, backgroundActive);
-    backgroundActive = scanBackgroundState(suffix, paddingHasBackground);
-    if (!paddingHasBackground) return rawLine;
-    return `${prefix}\u001b[K${suffix}${hasCarriageReturn ? "\r" : ""}`;
-  }).join("\n");
+      const prefix = line.slice(0, match.index);
+      const suffix = match[1] ?? "";
+      const paddingHasBackground = scanBackgroundState(prefix, backgroundActive);
+      backgroundActive = scanBackgroundState(suffix, paddingHasBackground);
+      if (!paddingHasBackground) return rawLine;
+      return `${prefix}\u001b[K${suffix}${hasCarriageReturn ? "\r" : ""}`;
+    })
+    .join("\n");
 }
 
 function scanBackgroundState(text: string, initial: boolean): boolean {
@@ -977,12 +1186,7 @@ export async function sendReplySteps(
     }
     return { ok: true, textDelivered };
   } catch (err) {
-    if (
-      txt &&
-      !textDelivered &&
-      err instanceof HerdrRequestError &&
-      err.requestWritten
-    ) {
+    if (txt && !textDelivered && err instanceof HerdrRequestError && err.requestWritten) {
       // The request reached the socket but its acknowledgement did not reach us. Treat the safety
       // flag as "do not resend text": the terminal may already contain it, so clients clear the
       // composer and direct the operator to inspect the pane rather than risk a duplicate.
@@ -1033,7 +1237,8 @@ export function parseReplyBody(
   if (
     value.requestId !== undefined &&
     (typeof value.requestId !== "string" || !MUTATION_REQUEST_ID.test(value.requestId))
-  ) return null;
+  )
+    return null;
   return {
     text: value.text ?? "",
     submit: value.submit ?? true,
@@ -1064,9 +1269,9 @@ export function parsePushTestBody(
     typeof value.body !== "string" ||
     value.body.length === 0 ||
     value.body.length > 512 ||
-    (value.paneId !== undefined &&
-      (typeof value.paneId !== "string" || value.paneId.length > 128))
-  ) return null;
+    (value.paneId !== undefined && (typeof value.paneId !== "string" || value.paneId.length > 128))
+  )
+    return null;
   return {
     title: value.title,
     body: value.body,
@@ -1084,7 +1289,8 @@ export function parseCreateTabBody(
   if (
     value.requestId !== undefined &&
     (typeof value.requestId !== "string" || !MUTATION_REQUEST_ID.test(value.requestId))
-  ) return null;
+  )
+    return null;
   return {
     workspaceId: value.workspaceId.trim(),
     ...(value.label !== undefined ? { label: value.label } : {}),
@@ -1109,7 +1315,8 @@ export function parseCreateWorkspaceBody(
   if (
     value.requestId !== undefined &&
     (typeof value.requestId !== "string" || !MUTATION_REQUEST_ID.test(value.requestId))
-  ) return null;
+  )
+    return null;
   return {
     cwd: value.cwd?.trim() || homedir(),
     ...(value.label !== undefined ? { label: value.label } : {}),
@@ -1117,9 +1324,7 @@ export function parseCreateWorkspaceBody(
   };
 }
 
-export function parseCreateWorktreeBody(
-  value: unknown,
-): {
+export function parseCreateWorktreeBody(value: unknown): {
   workspaceId: string;
   branch?: string;
   base?: string;
@@ -1134,7 +1339,8 @@ export function parseCreateWorktreeBody(
   if (
     value.requestId !== undefined &&
     (typeof value.requestId !== "string" || !MUTATION_REQUEST_ID.test(value.requestId))
-  ) return null;
+  )
+    return null;
   const optional = (key: "branch" | "base" | "label") => {
     const normalized = (value[key] as string | undefined)?.trim();
     return normalized ? { [key]: normalized } : {};
@@ -1156,7 +1362,8 @@ export function parseRemoveWorktreeBody(
   if (
     value.requestId !== undefined &&
     (typeof value.requestId !== "string" || !MUTATION_REQUEST_ID.test(value.requestId))
-  ) return null;
+  )
+    return null;
   return {
     force: value.force ?? false,
     ...(value.requestId !== undefined ? { requestId: value.requestId } : {}),
@@ -1239,7 +1446,13 @@ async function keysPane(
   const ae = req.headers.get("accept-encoding");
   try {
     await mutations.run(`${session}\n${paneId}`, () => herdr.sendPaneKeys(paneId, keys));
-    audit.record({ action: "keys", paneId, session, device, detail: { keys, outcome: "confirmed" } });
+    audit.record({
+      action: "keys",
+      paneId,
+      session,
+      device,
+      detail: { keys, outcome: "confirmed" },
+    });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
     audit.record({
@@ -1372,7 +1585,13 @@ async function closePane(
   const ae = req.headers.get("accept-encoding");
   try {
     await mutations.run(`${session}\n${paneId}`, () => herdr.closePane(paneId));
-    audit.record({ action: "pane.close", paneId, session, device, detail: { outcome: "confirmed" } });
+    audit.record({
+      action: "pane.close",
+      paneId,
+      session,
+      device,
+      detail: { outcome: "confirmed" },
+    });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
     audit.record({
@@ -1397,7 +1616,13 @@ async function focusPane(
   const ae = req.headers.get("accept-encoding");
   try {
     await herdr.focusPane(paneId);
-    audit.record({ action: "pane.focus", paneId, session, device, detail: { outcome: "confirmed" } });
+    audit.record({
+      action: "pane.focus",
+      paneId,
+      session,
+      device,
+      detail: { outcome: "confirmed" },
+    });
     return json({ ok: true } satisfies ActionResponse, ae);
   } catch (err) {
     audit.record({
@@ -1465,10 +1690,10 @@ async function createTab(
   };
   const result = body.requestId
     ? await deduplicator.run(
-      `${session}\n${body.requestId}`,
-      JSON.stringify({ action: "tab", workspaceId, label: body.label, cwd: body.cwd }),
-      execute,
-    )
+        `${session}\n${body.requestId}`,
+        JSON.stringify({ action: "tab", workspaceId, label: body.label, cwd: body.cwd }),
+        execute,
+      )
     : await execute();
   return json(result, ae);
 }
@@ -1489,7 +1714,8 @@ async function renameTab(
   }
   const ae = req.headers.get("accept-encoding");
   const body = parseRenameTabBody(raw);
-  if (!body) return json({ ok: false, error: "invalid tab rename request" } satisfies ActionResponse, ae);
+  if (!body)
+    return json({ ok: false, error: "invalid tab rename request" } satisfies ActionResponse, ae);
   try {
     await herdr.renameTab(tabId, body.label);
     audit.record({
@@ -1534,7 +1760,8 @@ async function createWorkspace(
   }
   const ae = req.headers.get("accept-encoding");
   const body = parseCreateWorkspaceBody(raw);
-  if (!body) return json({ ok: false, error: "invalid workspace request" } satisfies CreateResponse, ae);
+  if (!body)
+    return json({ ok: false, error: "invalid workspace request" } satisfies CreateResponse, ae);
   const { cwd } = body;
   const execute = async (): Promise<CreateResponse> => {
     try {
@@ -1573,10 +1800,10 @@ async function createWorkspace(
   };
   const result = body.requestId
     ? await deduplicator.run(
-      `${session}\n${body.requestId}`,
-      JSON.stringify({ action: "workspace", label: body.label, cwd }),
-      execute,
-    )
+        `${session}\n${body.requestId}`,
+        JSON.stringify({ action: "workspace", label: body.label, cwd }),
+        execute,
+      )
     : await execute();
   return json(result, ae);
 }
@@ -1681,7 +1908,8 @@ async function removeWorktree(
   }
   const ae = req.headers.get("accept-encoding");
   const body = parseRemoveWorktreeBody(raw);
-  if (!body) return json({ ok: false, error: "invalid worktree removal" } satisfies ActionResponse, ae);
+  if (!body)
+    return json({ ok: false, error: "invalid worktree removal" } satisfies ActionResponse, ae);
   const execute = async (): Promise<ActionResponse> => {
     try {
       await herdr.removeWorktree(workspaceId, body.force);
@@ -1756,7 +1984,10 @@ async function uploadPane(
   }
   const ext = IMAGE_EXT[file.type];
   if (!ext) {
-    return json({ ok: false, error: `unsupported type: ${file.type || "unknown"}` } satisfies UploadResponse, ae);
+    return json(
+      { ok: false, error: `unsupported type: ${file.type || "unknown"}` } satisfies UploadResponse,
+      ae,
+    );
   }
   if (file.size > MAX_UPLOAD_BYTES) {
     return json({ ok: false, error: "image too large (max 10 MB)" } satisfies UploadResponse, ae);
@@ -1840,8 +2071,7 @@ export function checkAccess(
       }
     });
     const allowed =
-      (originUrl.host === host && originUrl.protocol === expectedProtocol) ||
-      explicitOrigin;
+      (originUrl.host === host && originUrl.protocol === expectedProtocol) || explicitOrigin;
     if (!allowed) return { ok: false, reason: "cross-origin rejected" };
   } else if (
     level === "write" &&
@@ -1903,12 +2133,9 @@ function effectiveRequestHost(req: Request): string {
 }
 
 function isProxiedRequest(req: Request): boolean {
-  return [
-    "forwarded",
-    "x-forwarded-for",
-    "x-forwarded-host",
-    "tailscale-user-login",
-  ].some((header) => Boolean(req.headers.get(header)?.trim()));
+  return ["forwarded", "x-forwarded-for", "x-forwarded-host", "tailscale-user-login"].some(
+    (header) => Boolean(req.headers.get(header)?.trim()),
+  );
 }
 
 /**
