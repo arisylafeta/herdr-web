@@ -359,12 +359,45 @@ export function startServer(opts: {
           rt.name,
         );
       }
+      if (tabMatch && req.method === "DELETE") {
+        const denied = guard(req, cfg, "write");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        return closeScope(
+          rt.herdr,
+          rt.engine,
+          { tabId: decodeURIComponent(tabMatch[1]!) },
+          req,
+          audit,
+          deviceAuth(req, cfg).device,
+          rt.name,
+          actionDeduplicator,
+        );
+      }
       if (pathname === "/api/workspace" && req.method === "POST") {
         const denied = guard(req, cfg, "write");
         if (denied) return denied;
         const rt = registry.get(sessionName);
         if (!rt) return unknownSession();
         return createWorkspace(rt.herdr, req, audit, deviceAuth(req, cfg).device, rt.name, createDeduplicator);
+      }
+      const workspaceMatch = pathname.match(/^\/api\/workspace\/([^/]+)$/);
+      if (workspaceMatch && req.method === "DELETE") {
+        const denied = guard(req, cfg, "write");
+        if (denied) return denied;
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        return closeScope(
+          rt.herdr,
+          rt.engine,
+          { workspaceId: decodeURIComponent(workspaceMatch[1]!) },
+          req,
+          audit,
+          deviceAuth(req, cfg).device,
+          rt.name,
+          actionDeduplicator,
+        );
       }
 
       if (pathname === "/api/worktree" && req.method === "POST") {
@@ -1258,6 +1291,71 @@ async function inputPane(
     });
     return json(mutationFailureResponse(err, "terminal input") satisfies ActionResponse, ae);
   }
+}
+
+async function closeScope(
+  herdr: HerdrClient,
+  engine: StateEngine,
+  scope: { readonly tabId?: string; readonly workspaceId?: string },
+  req: Request,
+  audit: AuditLog,
+  device: string | null,
+  session: string,
+  deduplicator: ActionDeduplicator,
+): Promise<Response> {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return text("bad body", 400);
+  }
+  if (
+    !isJsonObject(raw) ||
+    typeof raw.requestId !== "string" ||
+    !MUTATION_REQUEST_ID.test(raw.requestId)
+  ) {
+    return text("invalid requestId", 400);
+  }
+  const paneIds = closeScopePaneIds(engine.current(), scope);
+  const action = scope.tabId ? "tab.close" : "workspace.close";
+  const result = await deduplicator.run(
+    `${session}\n${raw.requestId}`,
+    JSON.stringify({ action, ...scope }),
+    async () => {
+      try {
+        await Promise.all(paneIds.map((paneId) => herdr.closePane(paneId)));
+        audit.record({
+          action,
+          session,
+          device,
+          detail: { ...scope, paneCount: paneIds.length, outcome: "confirmed" },
+        });
+        return { ok: true } satisfies ActionResponse;
+      } catch (err) {
+        audit.record({
+          action,
+          session,
+          device,
+          detail: {
+            ...scope,
+            outcome: "failed-or-ambiguous",
+            error: (err as Error).message,
+          },
+        });
+        return mutationFailureResponse(err, action);
+      }
+    },
+  );
+  return json(result, req.headers.get("accept-encoding"));
+}
+
+export function closeScopePaneIds(
+  snapshot: Pick<SnapshotResponse, "agents" | "shellPanes">,
+  scope: { readonly tabId?: string; readonly workspaceId?: string },
+): string[] {
+  return [...snapshot.agents, ...snapshot.shellPanes]
+    .filter((pane) => pane.tabId === scope.tabId || pane.workspaceId === scope.workspaceId)
+    .map((pane) => pane.paneId);
 }
 
 // Close a pane ("kill the agent"). Structural op — strictly less powerful than the text/keys

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   checkAccess,
+  closeScopePaneIds,
   CreateDeduplicator,
   deviceAuth,
   isHostAllowed,
@@ -93,6 +94,27 @@ describe("notificationKindsReenabled", () => {
         { blocked: true, done: false, updates: true },
       ),
     ).toBe(false);
+  });
+});
+
+describe("closeScopePaneIds", () => {
+  const snapshot = {
+    agents: [
+      { paneId: "agent-a", tabId: "tab-a", workspaceId: "space-a" },
+      { paneId: "agent-b", tabId: "tab-b", workspaceId: "space-a" },
+    ],
+    shellPanes: [{ paneId: "shell-c", tabId: "tab-c", workspaceId: "space-b" }],
+  } as Pick<import("./types.ts").SnapshotResponse, "agents" | "shellPanes">;
+
+  test("selects every pane in a tab", () => {
+    expect(closeScopePaneIds(snapshot, { tabId: "tab-a" })).toEqual(["agent-a"]);
+  });
+
+  test("selects every agent and shell pane in a space", () => {
+    expect(closeScopePaneIds(snapshot, { workspaceId: "space-a" })).toEqual([
+      "agent-a",
+      "agent-b",
+    ]);
   });
 });
 
