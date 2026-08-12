@@ -229,8 +229,7 @@ export class StateEngine {
           label: t.label,
           focused: t.focused,
           paneCount: t.pane_count,
-        }))
-        .sort((a, b) => a.number - b.number);
+        }));
 
       // Suppress first sightings only during initial hydration, so agents already blocked at bridge
       // startup do not nag. A later-created pane first observed blocked/done must still notify.

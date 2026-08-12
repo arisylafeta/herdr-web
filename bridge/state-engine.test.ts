@@ -238,6 +238,19 @@ describe("StateEngine — snapshot shaping", () => {
     expect(snap.bridge).toBe("connected");
   });
 
+  test("preserves Herdr's authoritative tab order instead of sorting by public number", async () => {
+    const { herdr, engine, poll } = makeEngine();
+    const base = herdr.tabs[0]!;
+    herdr.tabs = [
+      { ...base, tab_id: "w1:t32", number: 32, label: "first" },
+      { ...base, tab_id: "w1:t17", number: 17, label: "second" },
+    ];
+
+    await poll();
+
+    expect(engine.current().tabs.map((tab) => tab.tabId)).toEqual(["w1:t32", "w1:t17"]);
+  });
+
   test("sorts agents by urgency (blocked first), then workspace number", async () => {
     const { herdr, engine, poll } = makeEngine();
     herdr.panes = [
