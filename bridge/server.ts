@@ -98,7 +98,7 @@ const MAX_TERMINAL_COLS = 400;
 const MIN_TERMINAL_ROWS = 5;
 const MAX_TERMINAL_ROWS = 200;
 
-const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|input|keys|upload|close))?$/;
+const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|input|submit|keys|upload|close))?$/;
 const TAB_ROUTE = /^\/api\/tab\/([^/]+)$/;
 const WORKTREE_ROUTE = /^\/api\/worktree\/([^/]+)$/;
 const PANE_FOCUS_ROUTE = /^\/api\/focus\/([^/]+)$/;
@@ -664,6 +664,9 @@ export function startServer(opts: {
         }
         if (action === "input" && req.method === "POST") {
           return inputPane(herdr, paneId, req, audit, device, session, paneMutations);
+        }
+        if (action === "submit" && req.method === "POST") {
+          return submitPane(herdr, paneId, req, audit, device, session, paneMutations);
         }
         if (action === "keys" && req.method === "POST") {
           return keysPane(herdr, paneId, req, audit, device, session, paneMutations);
@@ -1258,6 +1261,14 @@ export function parseInputBody(value: unknown): string | null {
   return value.data;
 }
 
+export function parseSubmitBody(
+  value: unknown,
+): { data: string; key: "Enter" | "Tab" } | null {
+  if (!isJsonObject(value) || typeof value.data !== "string") return null;
+  if (value.data.length > 65_536 || (value.key !== "Enter" && value.key !== "Tab")) return null;
+  return { data: value.data, key: value.key };
+}
+
 export function parsePushTestBody(
   value: unknown,
 ): { title: string; body: string; paneId?: string } | null {
@@ -1503,6 +1514,49 @@ async function inputPane(
       detail: { bytes: new TextEncoder().encode(data).length, outcome: "failed-or-ambiguous" },
     });
     return json(mutationFailureResponse(err, "terminal input") satisfies ActionResponse, ae);
+  }
+}
+
+async function submitPane(
+  herdr: HerdrClient,
+  paneId: string,
+  req: Request,
+  audit: AuditLog,
+  device: string | null,
+  session: string,
+  mutations: PaneMutationQueue,
+): Promise<Response> {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return text("bad body", 400);
+  }
+  const body = parseSubmitBody(raw);
+  if (!body) return text("bad terminal submit", 400);
+  const ae = req.headers.get("accept-encoding");
+  const bytes = new TextEncoder().encode(body.data).length;
+  try {
+    await mutations.run(`${session}\n${paneId}`, () =>
+      herdr.sendPaneInput(paneId, body.data, [body.key]),
+    );
+    audit.record({
+      action: "pane.submit",
+      paneId,
+      session,
+      device,
+      detail: { bytes, key: body.key, outcome: "confirmed" },
+    });
+    return json({ ok: true } satisfies ActionResponse, ae);
+  } catch (err) {
+    audit.record({
+      action: "pane.submit",
+      paneId,
+      session,
+      device,
+      detail: { bytes, key: body.key, outcome: "failed-or-ambiguous" },
+    });
+    return json(mutationFailureResponse(err, "terminal submit") satisfies ActionResponse, ae);
   }
 }
 

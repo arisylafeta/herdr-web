@@ -19,6 +19,7 @@ import {
   parseRenameTabBody,
   parseReplyBody,
   parseRemoveWorktreeBody,
+  parseSubmitBody,
   PaneMutationQueue,
   ReplyDeduplicator,
   replyWasSubmitted,
@@ -693,6 +694,17 @@ describe("mutation request body parsing", () => {
     expect(parseInputBody({ data: "" })).toBeNull();
     expect(parseInputBody({ data: 1 })).toBeNull();
     expect(parseInputBody({ data: "x".repeat(65_537) })).toBeNull();
+  });
+
+  test("accepts one atomic text and submit-key mutation", () => {
+    expect(parseSubmitBody({ data: "hello", key: "Enter" })).toEqual({
+      data: "hello",
+      key: "Enter",
+    });
+    expect(parseSubmitBody({ data: "", key: "Tab" })).toEqual({ data: "", key: "Tab" });
+    expect(parseSubmitBody({ data: "hello", key: "Escape" })).toBeNull();
+    expect(parseSubmitBody({ data: 1, key: "Enter" })).toBeNull();
+    expect(parseSubmitBody({ data: "x".repeat(65_537), key: "Enter" })).toBeNull();
   });
 
   test("validates bounded manual push-test fields", () => {

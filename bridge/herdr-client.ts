@@ -570,9 +570,13 @@ export class HerdrClient {
     return this.request<void>("pane.send_keys", { pane_id: paneId, keys });
   }
 
-  /** Forward terminal input as one ordered Herdr mutation (text may include control bytes). */
-  sendPaneInput(paneId: string, text: string): Promise<void> {
-    return this.request<void>("pane.send_input", { pane_id: paneId, text });
+  /** Forward terminal text and optional semantic keys as one ordered Herdr mutation. */
+  sendPaneInput(paneId: string, text: string, keys?: string[]): Promise<void> {
+    return this.request<void>("pane.send_input", {
+      pane_id: paneId,
+      ...(text ? { text } : {}),
+      ...(keys?.length ? { keys } : {}),
+    });
   }
 
   /** Focus an exact pane; Herdr also updates its containing tab and workspace selection. */
