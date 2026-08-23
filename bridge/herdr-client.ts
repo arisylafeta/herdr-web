@@ -51,6 +51,7 @@ interface WirePane {
   focused: boolean;
   cwd?: string | null;
   foreground_cwd?: string | null;
+  label?: string | null;
   agent?: string | null;
   agent_status: AgentStatus;
   revision: number;
@@ -60,6 +61,12 @@ interface WirePane {
     max_offset_from_bottom: number;
     viewport_rows: number;
   } | null;
+}
+
+/** Agent identity fields carried alongside panes in `session.snapshot`. */
+interface WireAgent {
+  pane_id: string;
+  name?: string | null;
 }
 
 /**
@@ -73,6 +80,8 @@ export interface WireSnapshot {
   workspaces: WireWorkspace[];
   tabs: WireTab[];
   panes: WirePane[];
+  /** Optional for compatibility with Herdr versions that omit the agent summary. */
+  agents?: WireAgent[];
 }
 
 /** The freshly-created shell pane returned by tab.create / workspace.create (`root_pane`). */

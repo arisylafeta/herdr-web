@@ -356,7 +356,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory="${root_escaped}"
+WorkingDirectory=${root_escaped}
 ExecStart="${bun_escaped}" run "${root_escaped}/bridge/index.ts"
 Restart=on-failure
 RestartSec=5
@@ -372,7 +372,7 @@ Environment="COLLIE_PUBLIC_HOSTS=${public_hosts_escaped}"
 Environment="HERDR_CONTROL_EFFECTIVE_PUBLIC_HOSTS=${public_hosts_escaped}"
 Environment="HERDR_PLUGIN_CONFIG_DIR=${config_escaped}"
 ${state_environment}
-EnvironmentFile="-${config_escaped}/.env"
+EnvironmentFile=-${config_escaped}/.env
 
 [Install]
 WantedBy=default.target

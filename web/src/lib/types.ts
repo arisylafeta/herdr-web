@@ -6,6 +6,7 @@ export interface AgentView {
   workspaceLabel: string;
   workspaceNumber: number;
   tabId: string;
+  name?: string;
   agent: string;
   status: AgentStatus;
   cwd: string;
@@ -105,7 +106,7 @@ export interface BridgeConfig {
 export const STATUS_LABEL: Record<AgentStatus, string> = {
   blocked: "Needs input",
   working: "Working",
-  done: "Completed",
+  done: "Done",
   idle: "Idle",
   unknown: "Unknown",
 };

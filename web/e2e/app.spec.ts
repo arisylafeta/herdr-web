@@ -54,7 +54,7 @@ test("mobile layout exposes the complete primary workflow", async ({ page }) => 
   const sidebar = page.getByRole("complementary", { name: "Herdr workspaces" });
   await expect(sidebar).toBeVisible();
   await expect.poll(async () => (await sidebar.boundingBox())?.x ?? -1000).toBeGreaterThanOrEqual(-1);
-  await sidebar.getByRole("button", { name: /Opencode/i }).click();
+  await sidebar.getByRole("button", { name: /release-check/i }).click();
   await expect(page.getByRole("heading", { name: "Opencode" })).toBeVisible();
   await expect.poll(async () => (await sidebar.boundingBox())?.x ?? 0).toBeLessThanOrEqual(-300);
 

@@ -6,13 +6,13 @@ import {
   PanelLeftClose,
   Search,
   Settings,
+  SquareCheck,
   SquarePen,
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { AgentView, SnapshotResponse } from "../lib/types";
 import { STATUS_LABEL } from "../lib/types";
-import { StatusDot } from "./StatusDot";
 
 interface SidebarProps {
   snapshot: SnapshotResponse;
@@ -29,8 +29,14 @@ interface SidebarProps {
   onOpenSettings: () => void;
 }
 
-function paneTitle(pane: AgentView): string {
+export function paneTitle(pane: AgentView, tabLabel = ""): string {
   if (pane.kind === "shell") return "Shell";
+  const name = pane.name?.trim();
+  if (name) return name;
+  const tab = tabLabel.trim();
+  if (tab && !/^\d+$/.test(tab)) return tab;
+  const workspace = pane.workspaceLabel.trim();
+  if (workspace) return workspace;
   return pane.agent.charAt(0).toUpperCase() + pane.agent.slice(1);
 }
 
@@ -54,6 +60,10 @@ export function Sidebar({
   onOpenSettings,
 }: SidebarProps) {
   const allPanes = useMemo(() => [...snapshot.agents, ...snapshot.shellPanes], [snapshot]);
+  const tabLabels = useMemo(
+    () => new Map(snapshot.tabs.map((tab) => [tab.tabId, tab.label])),
+    [snapshot.tabs],
+  );
   const selectedPane = allPanes.find((pane) => pane.paneId === selectedPaneId);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -131,11 +141,6 @@ export function Sidebar({
         <div className="workspace-list">
           {snapshot.workspaces.map((workspace) => {
             const workspacePanes = allPanes.filter((pane) => pane.workspaceId === workspace.workspaceId);
-            const workspaceStatus =
-              workspacePanes.find((pane) => pane.status === "blocked")?.status ??
-              workspacePanes.find((pane) => pane.status === "working")?.status ??
-              workspacePanes.find((pane) => pane.status === "done")?.status ??
-              "idle";
             const isCollapsed = collapsed.has(workspace.workspaceId);
             return (
               <section className="workspace-group" key={workspace.workspaceId}>
@@ -150,7 +155,6 @@ export function Sidebar({
                       <Folder />
                     </span>
                     <span className="workspace-label">{workspace.label}</span>
-                    <StatusDot status={workspaceStatus} pulse={workspaceStatus === "working"} />
                   </button>
                   <button
                     className="mini-icon-button workspace-add"
@@ -175,13 +179,17 @@ export function Sidebar({
                           onMobileClose();
                         }}
                       >
-                        <span className="pane-row-icon" aria-hidden="true">
-                          {pane.kind === "shell" ? <TerminalSquare /> : <StatusDot status={pane.status} pulse={pane.status === "working"} />}
-                        </span>
                         <span className="pane-row-copy">
                           <span className="pane-row-title">
-                            <strong>{paneTitle(pane)}</strong>
-                            <span>{STATUS_LABEL[pane.status]}</span>
+                            <strong>{paneTitle(pane, tabLabels.get(pane.tabId))}</strong>
+                            {pane.kind === "shell" ? (
+                              <span className="pane-shell-icon" aria-label="Shell"><TerminalSquare /></span>
+                            ) : (
+                              <span className={`sidebar-status-badge sidebar-status-${pane.status}`}>
+                                {pane.status === "done" && <SquareCheck aria-hidden="true" />}
+                                {STATUS_LABEL[pane.status]}
+                              </span>
+                            )}
                           </span>
                           <span className="pane-row-path">{relativePath(pane)}</span>
                         </span>

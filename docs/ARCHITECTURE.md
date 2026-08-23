@@ -27,6 +27,16 @@ Herdr remains the source of truth for process lifetime, pane state, workspace st
 | Composer send | `pane.send_text` followed by `pane.send_keys` |
 | New thread | New tab with a shell pane |
 
+## Agent identity and status presentation
+
+The bridge keeps the user-managed Herdr agent `name` separate from the agent implementation in
+`agent` (for example, `review-api` versus `codex`). The sidebar presents `name` first, then a
+meaningful tab label or workspace label, and uses the implementation name only as a last fallback.
+
+Sidebar status is communicated once per pane. Working uses a static blue badge; Done uses a green
+badge with a square check. The sidebar does not repeat status with a blinking dot. Other surfaces
+may retain compact status dots where they are the only status signal.
+
 ## Transport
 
 The bridge uses Collie's adapter boundary. `bridge/herdr-client.ts` is the only client-facing service module that knows Herdr RPC method names. Clients consume bounded snapshots and pane reads over REST, with a session-scoped WebSocket carrying structural change notifications and native terminal frames.

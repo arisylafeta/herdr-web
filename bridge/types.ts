@@ -14,6 +14,8 @@ export interface AgentView {
   workspaceLabel: string;
   workspaceNumber: number;
   tabId: string;
+  /** User-managed Herdr agent name. Agent kind remains in `agent`. */
+  name?: string;
   agent: string;
   status: AgentStatus;
   cwd: string;

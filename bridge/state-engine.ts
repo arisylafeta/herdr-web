@@ -131,7 +131,12 @@ export class StateEngine {
     if (this.supportsSnapshot) {
       try {
         const snap = await this.herdr.sessionSnapshot();
-        return { workspaces: snap.workspaces, panes: snap.panes, tabs: snap.tabs };
+        const agentNames = new Map<string, string>();
+        for (const agent of snap.agents ?? []) {
+          const name = String(agent.name ?? "").trim();
+          if (name) agentNames.set(agent.pane_id, name);
+        }
+        return { workspaces: snap.workspaces, panes: snap.panes, tabs: snap.tabs, agentNames };
       } catch (err) {
         if (!(err instanceof Error && err.message.includes("unknown variant"))) throw err;
         this.supportsSnapshot = false;
@@ -143,7 +148,7 @@ export class StateEngine {
       this.herdr.listPanes(),
       this.herdr.listTabs(),
     ]);
-    return { workspaces, panes, tabs };
+    return { workspaces, panes, tabs, agentNames: new Map<string, string>() };
   }
 
   private async poll(): Promise<void> {
@@ -153,7 +158,7 @@ export class StateEngine {
     this.polling = true;
     const generation = this.lifecycleGeneration;
     try {
-      const { workspaces, panes, tabs } = await this.fetchWire();
+      const { workspaces, panes, tabs, agentNames } = await this.fetchWire();
       if (generation !== this.lifecycleGeneration) return;
       const wsById = new Map(workspaces.map((w) => [w.workspace_id, w]));
 
@@ -163,12 +168,14 @@ export class StateEngine {
         kind: "agent" | "shell",
       ): AgentView => {
         const ws = wsById.get(p.workspace_id);
+        const name = agentNames.get(p.pane_id) ?? String(p.label ?? "").trim();
         return {
           paneId: p.pane_id,
           workspaceId: p.workspace_id,
           workspaceLabel: ws?.label ?? p.workspace_id,
           workspaceNumber: ws?.number ?? 0,
           tabId: p.tab_id,
+          ...(kind === "agent" && name ? { name } : {}),
           agent,
           status: p.agent_status,
           cwd: normalizedPaneCwd(p),

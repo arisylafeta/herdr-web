@@ -15,6 +15,7 @@ interface FakePane {
   focused: boolean;
   cwd?: string | null;
   foreground_cwd?: string | null;
+  label?: string | null;
   agent?: string | null;
   agent_status: AgentStatus;
   revision: number;
@@ -65,6 +66,7 @@ const ws = (id: string, number: number): FakeWorkspace => ({
 
 class FakeHerdr {
   panes: FakePane[] = [];
+  agents: Array<{ pane_id: string; name?: string | null }> = [];
   workspaces = [ws("w1", 1), ws("w2", 2)];
   tabs = [
     {
@@ -85,6 +87,7 @@ class FakeHerdr {
       workspaces: this.workspaces,
       tabs: this.tabs,
       panes: this.panes,
+      agents: this.agents,
     });
   }
   listWorkspaces() {
@@ -217,6 +220,14 @@ describe("StateEngine — in-flight guard", () => {
 });
 
 describe("StateEngine — snapshot shaping", () => {
+  test("preserves the user-managed agent name separately from its agent kind", async () => {
+    const { herdr, engine, poll } = makeEngine();
+    herdr.panes = [pane("w1:p1", "w1", "working", "codex")];
+    herdr.agents = [{ pane_id: "w1:p1", name: "review-api" }];
+    await poll();
+    expect(engine.current().agents[0]).toMatchObject({ name: "review-api", agent: "codex" });
+  });
+
   test("prefers foreground cwd and normalizes missing pane paths", async () => {
     const { herdr, engine, poll } = makeEngine();
     herdr.panes = [
