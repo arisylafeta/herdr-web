@@ -104,7 +104,7 @@ html[data-theme="light"] {
   --terminal-text: #26312c;
   --terminal-text-soft: #39443f;
   --terminal-muted: #5f6b65;
-  --terminal-muted-dim: #78827d;
+  --terminal-muted-dim: #626e68;
   --terminal-ansi-black: #1f2522;
   --terminal-ansi-red: #ae3039;
   --terminal-ansi-green: #087447;
@@ -1841,13 +1841,13 @@ html[data-theme="light"] .connection-banner {
 html[data-theme="light"] .terminal-session .connection-banner {
   border-bottom-color: rgba(238, 92, 98, 0.2);
   background: rgba(238, 92, 98, 0.1);
-  color: #ef9ca0;
+  color: #9f3038;
 }
 
 html[data-theme="light"] .terminal-session .demo-banner {
   border-bottom-color: rgba(223, 170, 82, 0.2);
   background: rgba(223, 170, 82, 0.1);
-  color: #e3bd7e;
+  color: #805613;
 }
 
 html[data-theme="light"] .demo-banner,
