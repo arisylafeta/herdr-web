@@ -55,7 +55,7 @@ test("mobile layout exposes the complete primary workflow", async ({ page }) => 
   await expect(sidebar).toBeVisible();
   await expect.poll(async () => (await sidebar.boundingBox())?.x ?? -1000).toBeGreaterThanOrEqual(-1);
   await sidebar.getByRole("button", { name: /release-check/i }).click();
-  await expect(page.locator(".topbar-title strong")).toContainText(/opencode/i);
+  await expect(page.locator(".topbar-title h1")).toContainText(/opencode/i);
   await expect.poll(async () => (await sidebar.boundingBox())?.x ?? 0).toBeLessThanOrEqual(-300);
 
   const composer = page.getByLabel("Reply to pane");

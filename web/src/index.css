@@ -639,7 +639,8 @@ svg {
   gap: 7px;
 }
 
-.topbar-title strong {
+.topbar-title h1 {
+  margin: 0;
   overflow: hidden;
   font-size: 13px;
   font-weight: 620;
@@ -883,7 +884,7 @@ svg {
   --text-soft: #c8cbcc;
   --muted: #8b9091;
   --muted-dim: #626667;
-  overflow: hidden;
+  overflow: visible;
   min-height: 100%;
   border: 0;
   border-radius: 0;
@@ -1791,6 +1792,18 @@ html[data-theme="light"] .connection-banner {
   color: #9f3038;
 }
 
+html[data-theme="light"] .terminal-session .connection-banner {
+  border-bottom-color: rgba(238, 92, 98, 0.2);
+  background: rgba(238, 92, 98, 0.1);
+  color: #ef9ca0;
+}
+
+html[data-theme="light"] .terminal-session .demo-banner {
+  border-bottom-color: rgba(223, 170, 82, 0.2);
+  background: rgba(223, 170, 82, 0.1);
+  color: #e3bd7e;
+}
+
 html[data-theme="light"] .demo-banner,
 html[data-theme="light"] .update-banner-restart {
   color: #805613;
@@ -1912,7 +1925,7 @@ html[data-theme="light"] .modal-layer {
     gap: 8px;
   }
 
-  .topbar-title strong {
+  .topbar-title h1 {
     font-size: 12px;
   }
 

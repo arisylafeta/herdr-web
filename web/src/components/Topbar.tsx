@@ -48,10 +48,16 @@ export function Topbar({
 
       <div className="topbar-title">
         <div className="topbar-title-row">
-          <strong>{pane ? `${pane.agent === "shell" ? "Shell" : pane.agent} · ${pane.workspaceLabel}` : "Herd overview"}</strong>
+          <h1>{pane ? `${pane.agent === "shell" ? "Shell" : pane.agent} · ${pane.workspaceLabel}` : "Herd overview"}</h1>
           {pane && <StatusDot status={pane.status} pulse={pane.status === "working"} />}
         </div>
-        <span>{tab?.label ?? (pane ? STATUS_LABEL[pane.status] : "Select a pane to begin")}</span>
+        <span>
+          {pane
+            ? tab?.label
+              ? `${tab.label} · ${STATUS_LABEL[pane.status]}`
+              : STATUS_LABEL[pane.status]
+            : "Select a pane to begin"}
+        </span>
       </div>
 
       <div className="topbar-actions">
