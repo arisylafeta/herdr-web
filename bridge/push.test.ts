@@ -300,6 +300,60 @@ describe("Push — persistence", () => {
 });
 
 describe("Push — optional VAPID initialization", () => {
+  test("first run generates and persists owner-only VAPID keys", async () => {
+    const cfg = await tempCfg();
+    let configured: [string, string, string] | undefined;
+    const push = new Push(cfg, undefined, async () => ({
+      generateVAPIDKeys: () => ({ publicKey: "generated-public", privateKey: "generated-private" }),
+      setVapidDetails: (subject, publicKey, privateKey) => {
+        configured = [subject, publicKey, privateKey];
+      },
+      sendNotification: () => Promise.resolve(),
+    }));
+
+    await push.init();
+
+    expect(push.enabled).toBe(true);
+    expect(push.publicKey).toBe("generated-public");
+    expect(configured).toEqual([
+      "mailto:admin@example.com",
+      "generated-public",
+      "generated-private",
+    ]);
+    expect(JSON.parse(await readFile(join(cfg.stateDir, "push-vapid.json"), "utf8"))).toEqual({
+      publicKey: "generated-public",
+      privateKey: "generated-private",
+    });
+    expect((await stat(join(cfg.stateDir, "push-vapid.json"))).mode & 0o777).toBe(0o600);
+  });
+
+  test("restart reuses automatically provisioned VAPID keys", async () => {
+    const cfg = await tempCfg();
+    await writeFile(
+      join(cfg.stateDir, "push-vapid.json"),
+      JSON.stringify({ publicKey: "saved-public", privateKey: "saved-private" }),
+      { mode: 0o600 },
+    );
+    let generated = false;
+    let configured: [string, string, string] | undefined;
+    const push = new Push(cfg, undefined, async () => ({
+      generateVAPIDKeys: () => {
+        generated = true;
+        return { publicKey: "new-public", privateKey: "new-private" };
+      },
+      setVapidDetails: (subject, publicKey, privateKey) => {
+        configured = [subject, publicKey, privateKey];
+      },
+      sendNotification: () => Promise.resolve(),
+    }));
+
+    await push.init();
+
+    expect(generated).toBe(false);
+    expect(push.publicKey).toBe("saved-public");
+    expect(configured).toEqual(["mailto:admin@example.com", "saved-public", "saved-private"]);
+  });
+
   test("malformed optional VAPID configuration disables push without aborting startup", async () => {
     const cfg = {
       ...(await tempCfg()),
@@ -308,6 +362,7 @@ describe("Push — optional VAPID initialization", () => {
       vapidSubject: "not-a-vapid-subject",
     };
     const push = new Push(cfg, undefined, async () => ({
+      generateVAPIDKeys: () => ({ publicKey: "generated-public", privateKey: "generated-private" }),
       setVapidDetails: () => {
         throw new Error("invalid VAPID subject");
       },
@@ -332,7 +387,11 @@ describe("Push — optional VAPID initialization", () => {
       join(cfg.stateDir, "push-subscriptions.json"),
       JSON.stringify([stored(sub("opt-out"))]),
     );
-    const push = new Push(cfg, () => Promise.resolve());
+    const push = new Push(
+      cfg,
+      () => Promise.resolve(),
+      async () => { throw new Error("web-push unavailable"); },
+    );
 
     await push.init();
     expect(push.enabled).toBe(false);

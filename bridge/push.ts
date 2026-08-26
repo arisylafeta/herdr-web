@@ -7,6 +7,7 @@ import type { Config } from "./config.ts";
 // Subscriptions are persisted to the state dir so they survive restarts.
 
 export interface WebPushLibrary {
+  generateVAPIDKeys(): { publicKey: string; privateKey: string };
   setVapidDetails(subject: string, publicKey: string, privateKey: string): void;
   sendNotification(
     subscription: PushSubscription,
@@ -187,8 +188,10 @@ export class Push {
   private lib: WebPushLibrary | null = null;
   private subs = new Map<string, StoredPushSubscription>();
   private readonly file: string;
+  private readonly vapidFile: string;
   private readonly sender: PushSender;
   private _enabled = false;
+  private activePublicKey = "";
   // Subscription mutations and their writes are one serial transaction. The live map changes only
   // after its owner-only file is durable, and a failed write cannot poison later mutations.
   private mutationChain: Promise<void> = Promise.resolve();
@@ -199,6 +202,7 @@ export class Push {
     private readonly loadLibrary: WebPushLibraryLoader = async () => import("web-push"),
   ) {
     this.file = join(cfg.stateDir, "push-subscriptions.json");
+    this.vapidFile = join(cfg.stateDir, "push-vapid.json");
     this.sender = sender ?? ((sub, payload, options) => this.lib!.sendNotification(sub, payload, options));
   }
 
@@ -208,7 +212,7 @@ export class Push {
   }
 
   get publicKey(): string {
-    return this.enabled ? this.cfg.vapidPublic : "";
+    return this.enabled ? this.activePublicKey : "";
   }
 
   get subscriptionCount(): number {
@@ -220,16 +224,15 @@ export class Push {
     // durably opt out even while VAPID is absent/malformed, or the endpoint would resurrect when
     // push is configured again.
     await this.load();
-    if (!this.cfg.vapidPublic || !this.cfg.vapidPrivate) {
-      console.log("[push] disabled (no VAPID keys configured)");
-      return;
-    }
     try {
       const lib = await this.loadLibrary();
+      const keys = await this.resolveVapidKeys(lib);
+      if (!keys) return;
       // web-push validates the subject and key material synchronously here. Push is optional, so a
       // bad operator value must disable this feature rather than abort the entire bridge startup.
-      lib.setVapidDetails(this.cfg.vapidSubject, this.cfg.vapidPublic, this.cfg.vapidPrivate);
+      lib.setVapidDetails(this.cfg.vapidSubject, keys.publicKey, keys.privateKey);
       this.lib = lib;
+      this.activePublicKey = keys.publicKey;
     } catch (error) {
       this.lib = null;
       console.warn(
@@ -239,6 +242,34 @@ export class Push {
     }
     this._enabled = true;
     console.log(`[push] enabled (${this.subs.size} saved subscription(s))`);
+  }
+
+  private async resolveVapidKeys(
+    lib: WebPushLibrary,
+  ): Promise<{ publicKey: string; privateKey: string } | null> {
+    const configuredPublic = this.cfg.vapidPublic.trim();
+    const configuredPrivate = this.cfg.vapidPrivate.trim();
+    if (configuredPublic || configuredPrivate) {
+      if (!configuredPublic || !configuredPrivate) {
+        console.warn("[push] disabled (both COLLIE_VAPID_PUBLIC and COLLIE_VAPID_PRIVATE are required)");
+        return null;
+      }
+      return { publicKey: configuredPublic, privateKey: configuredPrivate };
+    }
+
+    try {
+      const saved = await Bun.file(this.vapidFile).json() as Record<string, unknown>;
+      if (typeof saved.publicKey === "string" && typeof saved.privateKey === "string") {
+        return { publicKey: saved.publicKey, privateKey: saved.privateKey };
+      }
+    } catch {
+      // First run, or an unreadable legacy file. A fresh key pair is written atomically below.
+    }
+
+    const generated = lib.generateVAPIDKeys();
+    await this.writePrivateFile(this.vapidFile, JSON.stringify(generated, null, 2));
+    console.log("[push] generated persistent VAPID keys");
+    return generated;
   }
 
   async addSubscription(
@@ -439,9 +470,13 @@ export class Push {
 
   /** Atomic, owner-only write: fresh temp file (mode 0600) then rename over the target. */
   private async writeState(data: string): Promise<void> {
+    await this.writePrivateFile(this.file, data);
+  }
+
+  private async writePrivateFile(file: string, data: string): Promise<void> {
     await mkdir(this.cfg.stateDir, { recursive: true, mode: 0o700 });
-    const tmp = `${this.file}.tmp`;
+    const tmp = `${file}.tmp`;
     await writeFile(tmp, data, { mode: 0o600 });
-    await rename(tmp, this.file);
+    await rename(tmp, file);
   }
 }
