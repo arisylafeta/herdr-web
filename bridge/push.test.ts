@@ -442,7 +442,11 @@ describe("Push — per-message collapse topic (update must not share the herd sl
 
     await push.send({ type: "update", tag: "herdr-control:update", title: "t", body: "b", target: "settings" });
 
-    expect(sends[0]!.options).toEqual({ topic: "herdr-control-update", TTL: 259_200, timeout: 10_000 });
+    expect(sends[0]!.options).toEqual({
+      topic: collapseTopic("herdr-control:update"),
+      TTL: 259_200,
+      timeout: 10_000,
+    });
     expect(JSON.parse(sends[0]!.payload).data.target).toBe("settings");
   });
 
@@ -481,7 +485,7 @@ describe("Push — per-message collapse topic (update must not share the herd sl
     await push.send({ type: "clear", tag: "herdr-control:update" });
 
     expect(sends[0]!.options).toEqual({
-      topic: "herdr-control-update",
+      topic: collapseTopic("herdr-control:update"),
       TTL: 259_200,
       timeout: 10_000,
     });
@@ -504,6 +508,11 @@ describe("Push — per-message collapse topic (update must not share the herd sl
 });
 
 describe("collapseTopic", () => {
+  test("uses a 32-character base64url digest accepted by Apple Web Push", () => {
+    expect(collapseTopic("herdr-control:herd")).toBe("DpvUQ8ICYBeietZtCx4Hhm7OR7ejJA1E");
+    expect(collapseTopic("already-safe")).toHaveLength(32);
+  });
+
   test("is stable, valid, and collision-resistant for long session tags", () => {
     const first = collapseTopic("herdr-control:herd:a-very-long-session-name-alpha");
     const second = collapseTopic("herdr-control:herd:a-very-long-session-name-beta");

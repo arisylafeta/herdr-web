@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
@@ -92,7 +93,7 @@ const PUSH_DELIVERY_TIMEOUT_MS = 10_000;
 // update stays relevant far longer than a transient "needs you".
 const UPDATE_SEND_OPTIONS = {
   TTL: 259_200,
-  topic: "herdr-control-update",
+  topic: collapseTopic("herdr-control:update"),
   timeout: PUSH_DELIVERY_TIMEOUT_MS,
 } as const;
 
@@ -109,17 +110,10 @@ export interface PushDeliverySummary {
  * so their queued messages cannot overwrite each other while a device is offline. */
 export function collapseTopic(tag: string | undefined): string {
   const source = tag || "herdr-control-herd";
-  const safe = source.replace(/[^A-Za-z0-9_-]/g, "-");
-  // Even a short normalized topic needs a source hash when replacement changed it: otherwise
-  // distinct session names such as `foo.bar` and `foo-bar` collapse into one offline queue slot.
-  if (safe === source && safe.length <= 32) return safe;
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < source.length; index++) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  const suffix = (hash >>> 0).toString(36);
-  return `${safe.slice(0, 31 - suffix.length)}-${suffix}`;
+  // Apple validates Topic as a base64url value, not merely a human-readable string composed of the
+  // same alphabet. A truncated SHA-256 digest is deterministic, collision-resistant, and exactly
+  // the protocol's 32-character maximum.
+  return createHash("sha256").update(source).digest("base64url").slice(0, 32);
 }
 
 /** Delivers one payload to one subscription with the given options. Injectable so the prune/log
