@@ -1,11 +1,19 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { demoSnapshot } from "../lib/mock";
 import { paneTitle, Sidebar } from "./Sidebar";
 
 const noop = vi.fn();
+const styles = readFileSync(new URL("../index.css", import.meta.url), "utf8");
 
 describe("Sidebar agent identity and status", () => {
+  it("keeps each workspace add-pane control visible without hover", () => {
+    const workspaceAddRule = styles.match(/\.workspace-add\s*\{([^}]*)\}/)?.[1];
+
+    expect(workspaceAddRule).toMatch(/opacity:\s*1;/);
+  });
+
   it("prefers the managed agent name over the implementation kind", () => {
     expect(paneTitle(demoSnapshot.agents[0]!)).toBe("api-review");
     expect(paneTitle({ ...demoSnapshot.agents[0]!, name: undefined }, "review-tab")).toBe("review-tab");

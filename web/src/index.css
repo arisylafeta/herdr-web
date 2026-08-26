@@ -400,11 +400,6 @@ svg {
 }
 
 .workspace-add {
-  opacity: 0;
-}
-
-.workspace-row:hover .workspace-add,
-.workspace-add:focus-visible {
   opacity: 1;
 }
 
