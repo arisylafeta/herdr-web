@@ -22,23 +22,27 @@ afterAll(async () => {
 
 describe("coerceNotifyPrefs", () => {
   test("fills missing / non-boolean keys from defaults", () => {
-    expect(coerceNotifyPrefs(undefined)).toEqual({ blocked: true, done: false, updates: true });
-    expect(coerceNotifyPrefs(null)).toEqual({ blocked: true, done: false, updates: true });
-    expect(coerceNotifyPrefs({})).toEqual({ blocked: true, done: false, updates: true });
-    expect(coerceNotifyPrefs({ blocked: false })).toEqual({ blocked: false, done: false, updates: true });
+    expect(coerceNotifyPrefs(undefined)).toEqual({ blocked: true, done: true, updates: true });
+    expect(coerceNotifyPrefs(null)).toEqual({ blocked: true, done: true, updates: true });
+    expect(coerceNotifyPrefs({})).toEqual({ blocked: true, done: true, updates: true });
+    expect(coerceNotifyPrefs({ blocked: false })).toEqual({ blocked: false, done: true, updates: true });
     expect(coerceNotifyPrefs({ done: true })).toEqual({ blocked: true, done: true, updates: true });
     // `updates` is a first-class key: an explicit false sticks, non-booleans fall back to the default.
-    expect(coerceNotifyPrefs({ updates: false })).toEqual({ blocked: true, done: false, updates: false });
+    expect(coerceNotifyPrefs({ updates: false })).toEqual({ blocked: true, done: true, updates: false });
     expect(coerceNotifyPrefs({ blocked: "yes", done: 1, updates: 0 })).toEqual({
       blocked: true,
-      done: false,
+      done: true,
       updates: true,
     });
   });
 });
 
 describe("NotifyPrefsStore", () => {
-  test("defaults to blocked-on / done-off when nothing is saved", async () => {
+  test("enables filtered completion notifications by default", () => {
+    expect(DEFAULT_NOTIFY_PREFS.done).toBe(true);
+  });
+
+  test("defaults to blocked-on / filtered-done-on when nothing is saved", async () => {
     const store = new NotifyPrefsStore(await tempCfg());
     await store.load();
     expect(store.current()).toEqual(DEFAULT_NOTIFY_PREFS);
@@ -48,7 +52,7 @@ describe("NotifyPrefsStore", () => {
     const store = new NotifyPrefsStore(await tempCfg());
     await store.load();
     expect(store.isNotifiable("blocked")).toBe(true);
-    expect(store.isNotifiable("done")).toBe(false);
+    expect(store.isNotifiable("done")).toBe(true);
     expect(store.isNotifiable("working")).toBe(false);
     expect(store.isNotifiable("idle")).toBe(false);
     await store.set({ done: true });
@@ -107,12 +111,12 @@ describe("NotifyPrefsStore", () => {
     ]);
 
     expect(disabled).toEqual({
-      previous: { blocked: true, done: false, updates: true },
-      updated: { blocked: false, done: false, updates: true },
+      previous: { blocked: true, done: true, updates: true },
+      updated: { blocked: false, done: true, updates: true },
     });
     expect(reenabled).toEqual({
-      previous: { blocked: false, done: false, updates: true },
-      updated: { blocked: true, done: false, updates: true },
+      previous: { blocked: false, done: true, updates: true },
+      updated: { blocked: true, done: true, updates: true },
     });
   });
 
@@ -121,7 +125,7 @@ describe("NotifyPrefsStore", () => {
     await writeFile(join(cfg.stateDir, "notify-prefs.json"), JSON.stringify({ blocked: false }));
     const store = new NotifyPrefsStore(cfg);
     await store.load();
-    expect(store.current()).toEqual({ blocked: false, done: false, updates: true });
+    expect(store.current()).toEqual({ blocked: false, done: true, updates: true });
   });
 
   test("load tolerates a missing file (keeps defaults)", async () => {

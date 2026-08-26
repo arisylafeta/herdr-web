@@ -59,6 +59,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     pollMs: 1500,
     pollIdleMs: 12_000,
     notifyDelayMs: 30_000,
+    doneNotifyDelayMs: 600_000,
     readLines: 200,
     submitKeys: ["Enter"],
     trustedUser: "me@example.com",

@@ -5,8 +5,9 @@ import type { AgentStatus } from "./types.ts";
 
 // Which agent lifecycle events are worth a push. A companion to Snooze (the do-not-disturb deadline):
 // where Snooze mutes everything for a while, this decides which *kinds* of alert ever fire. By default
-// only "agent needs your input" (blocked) pushes; a "done" push is off — most people don't want a buzz
-// for every completed task. Bridge-wide (not per-device), like Snooze, because a push fans out to
+// both blocked and done pushes are on. Done alerts have their own long delay and are cancelled when
+// the pane is seen, so enabling them does not buzz for every actively-managed task. Bridge-wide
+// (not per-device), like Snooze, because a push fans out to
 // every subscribed device. Persisted to the state dir so a preference survives the `systemctl restart`
 // that backend changes require. Missing file / missing keys fall back to defaults.
 
@@ -14,7 +15,7 @@ import type { AgentStatus } from "./types.ts";
 export interface NotifyPrefs {
   /** Push when an agent becomes blocked (waiting on your input). Default on. */
   blocked: boolean;
-  /** Push when an agent finishes its task. Default off. */
+  /** Push when an agent finishes its task and remains unseen past the completion delay. Default on. */
   done: boolean;
   /** Push when a newer Collie release is available. Default on — the off-switch for update alerts,
    *  which otherwise bypass snooze (an update isn't quiet-hours material). Not an agent status, so it
@@ -27,7 +28,7 @@ export interface NotifyPrefsChange {
   updated: NotifyPrefs;
 }
 
-export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = { blocked: true, done: false, updates: true };
+export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = { blocked: true, done: true, updates: true };
 
 /**
  * Coerce an untrusted parsed value into a {@link NotifyPrefs}, filling any missing or non-boolean key

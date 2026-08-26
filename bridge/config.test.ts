@@ -12,6 +12,7 @@ const KEYS = [
   "COLLIE_POLL_MS",
   "COLLIE_POLL_IDLE_MS",
   "COLLIE_NOTIFY_DELAY_MS",
+  "COLLIE_DONE_NOTIFY_DELAY_MS",
   "COLLIE_READ_LINES",
   "COLLIE_SUBMIT_KEYS",
   "COLLIE_TRUSTED_USER",
@@ -62,6 +63,7 @@ describe("loadConfig", () => {
     expect(cfg.trustedUserHeader).toBe("tailscale-user-login");
     expect(cfg.allowedOrigins).toEqual([]);
     expect(cfg.notifyDelayMs).toBe(30_000);
+    expect(cfg.doneNotifyDelayMs).toBe(600_000);
     // Host-header validation is opt-in (empty = off, legacy behaviour).
     expect(cfg.publicHosts).toEqual([]);
     expect(cfg.publicScheme).toBe("https");

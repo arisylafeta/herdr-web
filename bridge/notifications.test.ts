@@ -223,6 +223,14 @@ describe("NotificationCoordinator — coalescing", () => {
 });
 
 describe("NotificationCoordinator — retraction", () => {
+  test("does not resurrect a completion without a known completion time", () => {
+    const { sink, coord } = setup();
+
+    coord.reconcile([agent("p1", "done")]);
+
+    expect(sink.events).toEqual([{ kind: "clear" }]);
+  });
+
   test("reconciles a preserved restart slot and clears it when the agent resolves", () => {
     const { sink, coord } = setup();
     coord.reconcile([agent("p1", "blocked")]);
@@ -299,7 +307,7 @@ describe("NotificationReconciler — outage recovery", () => {
 });
 
 describe("NotificationCoordinator — type preferences", () => {
-  test("with default prefs (done off), a done transition never pushes — even after the window", () => {
+  test("with done muted, a done transition never pushes — even after the window", () => {
     const { clock, sink, coord } = setup({ blocked: true, done: false });
     coord.onTransition(agent("p1", "done"), "working", "done");
     expect(clock.armed).toBe(0); // a disabled kind isn't even debounced

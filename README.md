@@ -145,7 +145,8 @@ Copy [.env.example](.env.example) to `.env` in that directory. Important setting
 | `COLLIE_POLL_MS` | `1500` | Fast fallback polling interval. |
 | `COLLIE_POLL_IDLE_MS` | `12000` | Safety-net polling while event subscriptions are healthy. |
 | `COLLIE_READ_LINES` | `200` | Default bounded pane read size. |
-| `COLLIE_NOTIFY_DELAY_MS` | `30000` | Notification debounce interval. |
+| `COLLIE_NOTIFY_DELAY_MS` | `30000` | Delay before a blocked-agent notification. |
+| `COLLIE_DONE_NOTIFY_DELAY_MS` | `600000` | Delay before an unseen completed-agent notification. |
 | `COLLIE_TRUSTED_USER` | unset | Required matching proxy identity for remote API access. |
 | `COLLIE_TRUSTED_USER_HEADER` | `Tailscale-User-Login` | Identity header injected by the trusted proxy. |
 | `COLLIE_PUBLIC_HOSTS` | derived for Tailscale | Allowed public `host[:port]` values. |

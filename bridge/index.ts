@@ -144,11 +144,20 @@ const makeSession: SessionFactory = (name, socketPath, isPrimary) => {
     cancel: (h) => clearTimeout(h),
   };
   const sink = makeNotifySink(push, snooze, herdTagFor(isPrimary, name), isPrimary ? undefined : name);
-  const notifications = new NotificationCoordinator(clock, sink, cfg.notifyDelayMs, (status) =>
-    notifyPrefs.isNotifiable(status),
+  const notifications = new NotificationCoordinator(
+    clock,
+    sink,
+    cfg.notifyDelayMs,
+    (status) => notifyPrefs.isNotifiable(status),
+    cfg.doneNotifyDelayMs,
   );
   const notificationReconciler = new NotificationReconciler(notifications);
-  engine.onUpdate((snapshot) => notificationReconciler.onUpdate(snapshot));
+  engine.onUpdate((snapshot) => {
+    notificationReconciler.onUpdate(snapshot);
+    for (const agent of snapshot.agents) {
+      if (agent.focused) notifications.onSeen(agent.paneId);
+    }
+  });
   engine.onTransition((agent, from, to) => notifications.onTransition(agent, from, to));
   engine.onRemove((paneId) => notifications.onRemove(paneId));
 
@@ -185,7 +194,8 @@ const registry = new SessionRegistry({
 
 // Snoozing retracts and forgets every coordinator's derived state. When it ends—explicitly or by
 // deadline—rebuild each notification slot from the authoritative current snapshot so an agent that
-// remained blocked/done becomes visible again without waiting for an unrelated later transition.
+// remained blocked becomes visible again without waiting for an unrelated later transition. Done
+// alerts require a live completion timestamp, so reconciliation deliberately does not resurrect them.
 const stopSnoozeResume = snooze.onResume(() => {
   for (const runtime of registry.all()) runtime.resumeNotifications();
 });

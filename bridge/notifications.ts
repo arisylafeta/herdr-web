@@ -4,9 +4,8 @@ import type { AgentStatus, AgentView } from "./types.ts";
 // A notification shouldn't be fire-and-forget. This coordinator gives every blocked/done alert a
 // lifecycle and collapses the herd into a single, always-accurate notification:
 //
-//   • Debounce + cancel — an agent that blocks and unblocks within the window (you handled it at your
-//     desk) never reaches your phone. Herdr exposes no "user present" signal (only a `focused` pane,
-//     no activity timestamp), so we infer presence: a quickly-resolved transition is an at-desk one.
+//   • Debounce + cancel — short-lived blocked states never reach your phone. Done uses a longer
+//     window and pane focus as the available "seen" signal, cancelling work managed in the terminal.
 //   • Coalesce — instead of N stacked notifications, we keep ONE summary of everything currently
 //     outstanding: the named agent when exactly one needs you, or "N agents need you" for several.
 //     Each change re-renders that single summary; when the last one resolves, we clear it.
@@ -249,6 +248,9 @@ export class NotificationCoordinator<H = unknown> {
     this.outstanding.clear();
     for (const agent of agents) {
       if (!this.isNotifiable(agent.status)) continue;
+      // A snapshot cannot tell us when a pane completed, so resurrecting Done here would bypass
+      // its ten-minute unseen window after a restart or snooze. Only live transitions arm Done.
+      if (agent.status === "done") continue;
       this.outstanding.set(agent.paneId, {
         agent: agent.agent,
         workspaceLabel: agent.workspaceLabel,

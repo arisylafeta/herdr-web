@@ -104,11 +104,12 @@ export interface Config {
    */
   pollIdleMs: number;
   /**
-   * Debounce window before a blocked/done transition becomes a push, ms. An agent that resolves
-   * within this window (you handled it at your desk) never notifies; one that fires is retracted
-   * when it later resolves. See NotificationCoordinator. 0 = notify on the next tick (no debounce).
+   * Debounce window before a blocked transition becomes a push, ms. An agent that resolves within
+   * this window never notifies. See NotificationCoordinator. 0 = notify on the next tick.
    */
   notifyDelayMs: number;
+  /** Delay before an unseen completed agent becomes a push, ms. */
+  doneNotifyDelayMs: number;
   /** How many lines of scrollback to pull for the agent detail view. */
   readLines: number;
   /** Key sequence sent to submit a reply after the text (agent-dependent; see HERDR_API.md). */
@@ -189,6 +190,7 @@ export function loadConfig(): Config {
     pollMs: envInt("COLLIE_POLL_MS", 1500, { min: 250, max: 2_147_483_647 }),
     pollIdleMs: envInt("COLLIE_POLL_IDLE_MS", 12_000, { min: 1000, max: 2_147_483_647 }),
     notifyDelayMs: envInt("COLLIE_NOTIFY_DELAY_MS", 30_000, { min: 0, max: 2_147_483_647 }),
+    doneNotifyDelayMs: envInt("COLLIE_DONE_NOTIFY_DELAY_MS", 600_000, { min: 0, max: 2_147_483_647 }),
     readLines: envInt("COLLIE_READ_LINES", 200, { min: 1, max: MAX_READ_LINES }),
     submitKeys: submitKeys.length ? submitKeys : ["Enter"],
     trustedUser: process.env.COLLIE_TRUSTED_USER ?? "",
