@@ -158,7 +158,6 @@ export default function App() {
 
         <SessionView
           pane={herdr.selectedPane}
-          tab={selectedTab}
           output={herdr.paneOutput}
           loading={herdr.paneLoading}
           bridgeConnected={herdr.snapshot.bridge === "connected"}
