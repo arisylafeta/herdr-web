@@ -161,6 +161,7 @@ export class StateEngine {
       const { workspaces, panes, tabs, agentNames } = await this.fetchWire();
       if (generation !== this.lifecycleGeneration) return;
       const wsById = new Map(workspaces.map((w) => [w.workspace_id, w]));
+      const tabById = new Map(tabs.map((tab) => [tab.tab_id, tab]));
 
       const toView = (
         p: (typeof panes)[number],
@@ -169,6 +170,7 @@ export class StateEngine {
       ): AgentView => {
         const ws = wsById.get(p.workspace_id);
         const name = agentNames.get(p.pane_id) ?? String(p.label ?? "").trim();
+        const tabLabel = String(tabById.get(p.tab_id)?.label ?? "").trim();
         return {
           paneId: p.pane_id,
           workspaceId: p.workspace_id,
@@ -176,6 +178,7 @@ export class StateEngine {
           workspaceNumber: ws?.number ?? 0,
           tabId: p.tab_id,
           ...(kind === "agent" && name ? { name } : {}),
+          ...(tabLabel ? { tabLabel } : {}),
           agent,
           status: p.agent_status,
           cwd: normalizedPaneCwd(p),

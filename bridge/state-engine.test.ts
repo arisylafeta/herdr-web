@@ -225,7 +225,11 @@ describe("StateEngine — snapshot shaping", () => {
     herdr.panes = [pane("w1:p1", "w1", "working", "codex")];
     herdr.agents = [{ pane_id: "w1:p1", name: "review-api" }];
     await poll();
-    expect(engine.current().agents[0]).toMatchObject({ name: "review-api", agent: "codex" });
+    expect(engine.current().agents[0]).toMatchObject({
+      name: "review-api",
+      tabLabel: "1",
+      agent: "codex",
+    });
   });
 
   test("prefers foreground cwd and normalizes missing pane paths", async () => {

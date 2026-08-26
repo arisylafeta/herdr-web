@@ -7,7 +7,7 @@ import type { AgentStatus, AgentView } from "./types.ts";
 //   • Debounce + cancel — short-lived blocked states never reach your phone. Done uses a longer
 //     window and explicit terminal-focus / visible-web events as "seen" signals.
 //   • Coalesce — instead of N stacked notifications, we keep ONE summary of everything currently
-//     outstanding: the named agent when exactly one needs you, or "N agents need you" for several.
+//     outstanding: the named pane when exactly one needs you, or "N agents need you" for several.
 //     Each change re-renders that single summary; when the last one resolves, we clear it.
 //   • Retract — clearing an agent at the PC (or its pane closing) updates or removes the summary, so
 //     handled work never lingers on your lock screen.
@@ -40,7 +40,7 @@ const memoryOnlyCompletionLedger: CompletionLedger = {
 export interface HerdSummary {
   /** Headline: "claude needs you" for one, or "3 agents need you" for several. */
   title: string;
-  /** Sub-line: "demo · /path" for one outstanding alert, or the agent names for a digest. */
+  /** Sub-line: "demo · /path" for one outstanding alert, or the pane names for a digest. */
   body: string;
   /** Deep-link target when exactly one alert is outstanding; undefined for a multi-agent digest. */
   paneId?: string;
@@ -163,15 +163,37 @@ export function makeNotifySink(
 }
 
 interface Alert {
-  agent: string;
+  paneName: string;
   workspaceLabel: string;
   cwd: string;
   status: NotifiableStatus;
 }
 
+function notificationPaneName(agent: AgentView): string {
+  const managedName = agent.name?.trim();
+  if (managedName) return managedName;
+  const tabLabel = agent.tabLabel?.trim();
+  if (tabLabel && !/^\d+$/.test(tabLabel)) return tabLabel;
+  const workspace = agent.workspaceLabel.trim();
+  if (workspace) return workspace;
+  return agent.agent;
+}
+
+function alertFor(agent: AgentView, status: NotifiableStatus): Alert {
+  return {
+    paneName: notificationPaneName(agent),
+    workspaceLabel: agent.workspaceLabel,
+    cwd: agent.cwd,
+    status,
+  };
+}
+
 export class NotificationCoordinator<H = unknown> {
   /** paneId → debouncing alert (timer + its kind) that hasn't entered the summary yet. */
-  private readonly pending = new Map<string, { handle: H; status: NotifiableStatus }>();
+  private readonly pending = new Map<
+    string,
+    { handle: H; status: NotifiableStatus; alert: Alert }
+  >();
   /** paneId → alert that has fired and is reflected in the current summary (insertion-ordered). */
   private readonly outstanding = new Map<string, Alert>();
 
@@ -201,12 +223,7 @@ export class NotificationCoordinator<H = unknown> {
     // (Re)arm the debounce. A blocked→done flip lands here too, so only the latest verb survives.
     this.cancelPending(id);
     if (this.outstanding.delete(id)) this.emit(false);
-    const alert: Alert = {
-      agent: agent.agent,
-      workspaceLabel: agent.workspaceLabel,
-      cwd: agent.cwd,
-      status: to as NotifiableStatus,
-    };
+    const alert = alertFor(agent, to as NotifiableStatus);
     this.arm(id, alert, alert.status === "done" ? this.doneDelayMs : this.delayMs);
   }
 
@@ -254,23 +271,24 @@ export class NotificationCoordinator<H = unknown> {
     // a snooze ending, or a restart; none should reset a still-valid debounce window.
     for (const [id, pending] of [...this.pending]) {
       const current = byId.get(id);
-      if (current?.status === pending.status && this.isNotifiable(current.status)) continue;
+      if (current?.status === pending.status && this.isNotifiable(current.status)) {
+        pending.alert = alertFor(current, pending.status);
+        continue;
+      }
       this.cancelPending(id);
     }
     for (const [id, alert] of [...this.outstanding]) {
       const current = byId.get(id);
-      if (current?.status === alert.status && this.isNotifiable(current.status)) continue;
+      if (current?.status === alert.status && this.isNotifiable(current.status)) {
+        this.outstanding.set(id, alertFor(current, alert.status));
+        continue;
+      }
       this.outstanding.delete(id);
     }
     for (const agent of agents) {
       if (!this.isNotifiable(agent.status)) continue;
       if (this.pending.has(agent.paneId) || this.outstanding.has(agent.paneId)) continue;
-      const alert: Alert = {
-        agent: agent.agent,
-        workspaceLabel: agent.workspaceLabel,
-        cwd: agent.cwd,
-        status: agent.status as NotifiableStatus,
-      };
+      const alert = alertFor(agent, agent.status as NotifiableStatus);
       if (agent.status === "done") {
         const completedAt = this.completions.get(agent.paneId);
         if (completedAt === undefined) continue;
@@ -324,7 +342,7 @@ export class NotificationCoordinator<H = unknown> {
       const verb = a.status === "blocked" ? "needs you" : "is done";
       // One outstanding agent → deep-link straight to its pane on tap.
       return {
-        title: `${a.agent} ${verb}`,
+        title: `${a.paneName} ${verb}`,
         body: `${a.workspaceLabel} · ${a.cwd}`,
         paneId,
         renotify,
@@ -339,16 +357,18 @@ export class NotificationCoordinator<H = unknown> {
       : allDone
         ? `${n} agents done`
         : `${n} agents need attention`;
-    return { title, body: alerts.map((a) => a.agent).join(", "), renotify };
+    return { title, body: alerts.map((a) => a.paneName).join(", "), renotify };
   }
 
   private arm(id: string, alert: Alert, delayMs: number): void {
     const handle = this.clock.schedule(() => {
+      const current = this.pending.get(id);
+      if (!current) return;
       this.pending.delete(id);
-      this.outstanding.set(id, alert);
+      this.outstanding.set(id, current.alert);
       this.emit(true);
     }, delayMs);
-    this.pending.set(id, { handle, status: alert.status });
+    this.pending.set(id, { handle, status: alert.status, alert });
   }
 
   private cancelPending(id: string): void {

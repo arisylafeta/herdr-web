@@ -7,6 +7,7 @@ export interface AgentView {
   workspaceNumber: number;
   tabId: string;
   name?: string;
+  tabLabel?: string;
   agent: string;
   status: AgentStatus;
   cwd: string;

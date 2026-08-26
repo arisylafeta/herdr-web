@@ -16,6 +16,8 @@ export interface AgentView {
   tabId: string;
   /** User-managed Herdr agent name. Agent kind remains in `agent`. */
   name?: string;
+  /** User-managed tab label, used as the pane display name when no agent name is set. */
+  tabLabel?: string;
   agent: string;
   status: AgentStatus;
   cwd: string;

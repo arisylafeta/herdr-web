@@ -89,6 +89,7 @@ function agentNamed(paneId: string, name: string, status: AgentStatus): AgentVie
     workspaceLabel: "demo",
     workspaceNumber: 1,
     tabId: "w1:t1",
+    name,
     agent: name,
     status,
     cwd: "/home/you/demo",
@@ -125,6 +126,57 @@ function setup(
 }
 
 describe("NotificationCoordinator — debounce", () => {
+  test("uses the managed pane name in the notification title", () => {
+    const { clock, sink, coord } = setup();
+    const named = { ...agent("p1", "done"), name: "review-api", tabLabel: "review" };
+
+    coord.onTransition(named, "working", "done");
+    clock.fireAll();
+
+    expect(sink.last?.title).toBe("review-api is done");
+  });
+
+  test("uses a named tab when the pane has no managed agent name", () => {
+    const { clock, sink, coord } = setup();
+    const named = {
+      ...agent("p1", "blocked"),
+      name: undefined,
+      tabLabel: "supplier-import",
+    };
+
+    coord.onTransition(named, "working", "blocked");
+    clock.fireAll();
+
+    expect(sink.last?.title).toBe("supplier-import needs you");
+  });
+
+  test("uses the workspace name instead of a numeric default tab or agent kind", () => {
+    const { clock, sink, coord } = setup();
+    const unnamed = {
+      ...agent("p1", "done"),
+      name: undefined,
+      tabLabel: "1",
+      agent: "codex",
+    };
+
+    coord.onTransition(unnamed, "working", "done");
+    clock.fireAll();
+
+    expect(sink.last?.title).toBe("demo is done");
+  });
+
+  test("uses a pane name changed during the completion delay without resetting its timer", () => {
+    const { clock, sink, coord } = setup();
+    const completed = { ...agent("p1", "done"), name: "old-name" };
+    coord.onTransition(completed, "working", "done");
+
+    coord.reconcile([{ ...completed, name: "new-name" }]);
+    expect(clock.scheduledDelays).toEqual([600_000]);
+    clock.fireAll();
+
+    expect(sink.last?.title).toBe("new-name is done");
+  });
+
   test("waits ten minutes for done while preserving the shorter blocked delay", () => {
     const { clock, coord } = setup();
 
