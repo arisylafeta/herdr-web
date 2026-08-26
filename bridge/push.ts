@@ -373,9 +373,9 @@ export class Push {
           if (code === 404 || code === 410) {
             dead.push(sub.endpoint);
           } else {
-            console.warn(
-              `[push] send failed for ${sub.endpoint}: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            const provider = new URL(sub.endpoint).origin;
+            const status = code === undefined ? "no HTTP status" : `HTTP ${code}`;
+            console.warn(`[push] send failed via ${provider} (${status})`);
           }
         }
       }),

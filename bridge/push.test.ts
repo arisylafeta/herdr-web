@@ -83,7 +83,7 @@ describe("Push — broadcast delivery & pruning", () => {
   test("a non-410 error logs and keeps the subscription", async () => {
     const cfg = await tempCfg();
     const sender: PushSender = () =>
-      Promise.reject(Object.assign(new Error("boom"), { statusCode: 500 }));
+      Promise.reject(Object.assign(new Error(`boom at ${endpoint("live")}`), { statusCode: 500 }));
     const push = new Push(cfg, sender);
     const subs = enable(push, [stored(sub("live"))]);
 
@@ -99,7 +99,8 @@ describe("Push — broadcast delivery & pruning", () => {
     }
 
     expect([...subs.keys()]).toEqual([endpoint("live")]); // kept
-    expect(warnings.some((w) => w.includes("send failed"))).toBe(true);
+    expect(warnings).toEqual(["[push] send failed via https://fcm.googleapis.com (HTTP 500)"]);
+    expect(warnings[0]).not.toContain(endpoint("live"));
     // No prune ⇒ no write ⇒ no file created.
     await expect(readFile(join(cfg.stateDir, "push-subscriptions.json"), "utf8")).rejects.toThrow();
   });
