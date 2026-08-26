@@ -10,11 +10,15 @@ interface BaseModalProps {
   open: boolean;
   title: string;
   description?: string;
+  centered?: boolean;
+  focusDialog?: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }
 
-function BaseModal({ open, title, description, onClose, children }: BaseModalProps) {
+function BaseModal({ open, title, description, centered = false, focusDialog = false, onClose, children }: BaseModalProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -24,10 +28,28 @@ function BaseModal({ open, title, description, onClose, children }: BaseModalPro
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, open]);
 
+  useEffect(() => {
+    if (!open || !focusDialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus({ preventScroll: true });
+    return () => previousFocus?.focus({ preventScroll: true });
+  }, [focusDialog, open]);
+
   if (!open) return null;
   return (
-    <div className="modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div
+      className={`modal-layer${centered ? " modal-layer-centered" : ""}`}
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        ref={dialogRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        tabIndex={focusDialog ? -1 : undefined}
+      >
         <header className="modal-header">
           <div>
             <h2 id="modal-title">{title}</h2>
@@ -99,7 +121,14 @@ export function CreateTabModal({
 }) {
   const [label, setLabel] = useState("");
   return (
-    <BaseModal open={open} onClose={onClose} title="New pane" description={`Open a new shell tab in ${workspaceLabel}.`}>
+    <BaseModal
+      open={open}
+      centered
+      focusDialog
+      onClose={onClose}
+      title="New pane"
+      description={`Open a new shell tab in ${workspaceLabel}.`}
+    >
       <form
         className="modal-form"
         onSubmit={(event) => {
@@ -111,7 +140,7 @@ export function CreateTabModal({
       >
         <label>
           <span>Tab name</span>
-          <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="agent" autoFocus />
+          <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="agent" />
         </label>
         <footer className="modal-footer">
           <button type="button" className="button-secondary" onClick={onClose}>Cancel</button>

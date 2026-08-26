@@ -2095,6 +2095,23 @@ html[data-theme="light"] .modal-layer {
     border-radius: 8px 8px 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
+
+  .modal-layer-centered {
+    align-items: center;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .modal-layer-centered .modal {
+    width: min(470px, 100%);
+    max-height: calc(100dvh - 32px);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding-bottom: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
