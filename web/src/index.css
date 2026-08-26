@@ -44,7 +44,7 @@
   --terminal-text: #c8cecd;
   --terminal-text-soft: #c8cbcc;
   --terminal-muted: #8b9091;
-  --terminal-muted-dim: #626667;
+  --terminal-muted-dim: #808687;
   --terminal-ansi-black: #000000;
   --terminal-ansi-red: #cd3131;
   --terminal-ansi-green: #0dbc79;
@@ -916,6 +916,8 @@ svg {
 }
 
 .terminal-session {
+  --scrollbar: rgba(255, 255, 255, 0.14);
+  --scrollbar-hover: rgba(255, 255, 255, 0.24);
   color-scheme: dark;
   background: var(--terminal-bg);
 }

@@ -16,10 +16,14 @@ describe("resolveTheme", () => {
   });
 
   it("keeps the mirrored terminal on its native dark palette in light app mode", () => {
-    const lightTheme = styles.match(/html\[data-theme="light"\]\s*\{([^}]*)\}/)?.[1];
+    const lightRuleBodies = [...styles.matchAll(/html\[data-theme="light"\][^{]*\{([^}]*)\}/g)]
+      .map((match) => match[1])
+      .join("\n");
+    const terminalSession = styles.match(/\.terminal-session\s*\{([^}]*)\}/)?.[1];
 
-    expect(lightTheme).toBeDefined();
-    expect(lightTheme).not.toContain("--terminal-");
-    expect(styles).toMatch(/\.terminal-session\s*\{[^}]*color-scheme:\s*dark;/);
+    expect(lightRuleBodies).not.toMatch(/--terminal-[\w-]+\s*:/);
+    expect(terminalSession).toMatch(/color-scheme:\s*dark;/);
+    expect(terminalSession).toMatch(/--scrollbar:\s*rgba\(255, 255, 255, 0\.14\);/);
+    expect(terminalSession).toMatch(/--scrollbar-hover:\s*rgba\(255, 255, 255, 0\.24\);/);
   });
 });
