@@ -108,6 +108,38 @@ describe("NotificationCoordinator — debounce", () => {
     expect(clock.scheduledDelays).toEqual([30_000, 600_000]);
   });
 
+  test("does not arm a completion notification for a focused pane", () => {
+    const { clock, sink, coord } = setup();
+    const completed = { ...agent("p1", "done"), focused: true };
+
+    coord.onTransition(completed, "working", "done");
+
+    expect(clock.armed).toBe(0);
+    expect(sink.events).toEqual([]);
+  });
+
+  test("cancels a pending completion after the pane is seen", () => {
+    const { clock, sink, coord } = setup();
+    coord.onTransition(agent("p1", "done"), "working", "done");
+
+    coord.onSeen("p1");
+    clock.fireAll();
+
+    expect(clock.armed).toBe(0);
+    expect(sink.events).toEqual([]);
+  });
+
+  test("retracts a delivered completion after the pane is seen", () => {
+    const { clock, sink, coord } = setup();
+    coord.onTransition(agent("p1", "done"), "working", "done");
+    clock.fireAll();
+    expect(sink.last?.title).toBe("claude is done");
+
+    coord.onSeen("p1");
+
+    expect(sink.events.at(-1)).toEqual({ kind: "clear" });
+  });
+
   test("does not render until the debounce window elapses, then renders once", () => {
     const { clock, sink, coord } = setup();
     coord.onTransition(agent("p1", "blocked"), "working", "blocked");

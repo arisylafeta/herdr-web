@@ -182,6 +182,12 @@ export class NotificationCoordinator<H = unknown> {
       this.resolve(id);
       return;
     }
+    if (to === "done" && agent.focused) {
+      // A focused pane is already in front of the terminal operator, so its completion has been
+      // seen and must not become a delayed phone notification.
+      this.resolve(id);
+      return;
+    }
     // (Re)arm the debounce. A blocked→done flip lands here too, so only the latest verb survives.
     this.cancelPending(id);
     if (this.outstanding.delete(id)) this.emit(false);
@@ -202,6 +208,14 @@ export class NotificationCoordinator<H = unknown> {
   /** Wire to `StateEngine.onRemove` — a vanished pane is implicitly resolved. */
   onRemove(paneId: string): void {
     this.resolve(paneId);
+  }
+
+  /** Mark a completed pane as seen, cancelling or retracting only its done notification. */
+  onSeen(paneId: string): void {
+    if (this.pending.get(paneId)?.status === "done") this.cancelPending(paneId);
+    if (this.outstanding.get(paneId)?.status !== "done") return;
+    this.outstanding.delete(paneId);
+    this.emit(false);
   }
 
   /**
