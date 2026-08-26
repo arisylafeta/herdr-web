@@ -170,6 +170,7 @@ export class NotificationCoordinator<H = unknown> {
     // Whether a transition into a status should notify, read live from the prefs store so a runtime
     // change is honoured. A disabled kind behaves exactly like a non-notifiable status (idle/working).
     private readonly isNotifiable: (status: AgentStatus) => boolean,
+    private readonly doneDelayMs: number = delayMs,
   ) {}
 
   /** Wire to `StateEngine.onTransition`. */
@@ -194,7 +195,7 @@ export class NotificationCoordinator<H = unknown> {
       this.pending.delete(id);
       this.outstanding.set(id, alert);
       this.emit(true);
-    }, this.delayMs);
+    }, alert.status === "done" ? this.doneDelayMs : this.delayMs);
     this.pending.set(id, { handle, status: alert.status });
   }
 

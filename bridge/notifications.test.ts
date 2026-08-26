@@ -17,9 +17,11 @@ import type { AgentStatus, AgentView } from "./types.ts";
 
 class FakeClock implements NotifyClock<number> {
   private readonly timers = new Map<number, () => void>();
+  readonly scheduledDelays: number[] = [];
   private next = 1;
-  schedule(fn: () => void, _delayMs: number): number {
+  schedule(fn: () => void, delayMs: number): number {
     const id = this.next++;
+    this.scheduledDelays.push(delayMs);
     this.timers.set(id, fn);
     return id;
   }
@@ -92,11 +94,20 @@ function setup(prefs: { blocked: boolean; done: boolean } = { blocked: true, don
   const live = { ...prefs };
   const isNotifiable = (s: AgentStatus): boolean =>
     s === "blocked" ? live.blocked : s === "done" ? live.done : false;
-  const coord = new NotificationCoordinator(clock, sink, 30_000, isNotifiable);
+  const coord = new NotificationCoordinator(clock, sink, 30_000, isNotifiable, 600_000);
   return { clock, sink, coord, prefs: live };
 }
 
 describe("NotificationCoordinator — debounce", () => {
+  test("waits ten minutes for done while preserving the shorter blocked delay", () => {
+    const { clock, coord } = setup();
+
+    coord.onTransition(agent("p1", "blocked"), "working", "blocked");
+    coord.onTransition(agent("p2", "done"), "working", "done");
+
+    expect(clock.scheduledDelays).toEqual([30_000, 600_000]);
+  });
+
   test("does not render until the debounce window elapses, then renders once", () => {
     const { clock, sink, coord } = setup();
     coord.onTransition(agent("p1", "blocked"), "working", "blocked");
