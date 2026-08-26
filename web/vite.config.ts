@@ -55,7 +55,7 @@ export default defineConfig({
       injectRegister: false,
       registerType: "autoUpdate",
       manifest: {
-        name: "Herdr Control",
+        name: "Herdr Web",
         short_name: "Herdr",
         description: "Monitor and drive durable Herdr agent sessions",
         display: "standalone",

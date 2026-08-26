@@ -40,7 +40,7 @@ test("desktop control plane is interactive and stable", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Jump to pane" }).getByRole("button", { name: /opencode/i })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await page.screenshot({ path: "artifacts/herdr-control-desktop.png", fullPage: true });
+  await page.screenshot({ path: "artifacts/herdr-web-desktop.png", fullPage: true });
   expect({ consoleErrors, responseErrors, requestFailures }).toEqual({ consoleErrors: [], responseErrors: [], requestFailures: [] });
   expect(pageErrors).toEqual([]);
 });
@@ -65,7 +65,7 @@ test("mobile layout exposes the complete primary workflow", async ({ page }) => 
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  await page.screenshot({ path: "artifacts/herdr-control-mobile.png", fullPage: true });
+  await page.screenshot({ path: "artifacts/herdr-web-mobile.png", fullPage: true });
 });
 
 test("live bridge snapshot renders without falling back to demo data", async ({ page, request }) => {
@@ -82,7 +82,7 @@ test("live bridge snapshot renders without falling back to demo data", async ({ 
   await expect(page.getByText(snapshot.workspaces[0]!.label, { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Preview transport.")).toHaveCount(0);
   await expect(page.getByText("Terminal output")).toBeVisible();
-  await page.screenshot({ path: "artifacts/herdr-control-live.png", fullPage: true });
+  await page.screenshot({ path: "artifacts/herdr-web-live.png", fullPage: true });
 });
 
 test("production PWA installs the custom push-capable worker", async ({ page }) => {
@@ -95,7 +95,7 @@ test("production PWA installs the custom push-capable worker", async ({ page }) 
   expect(workerUrl).toMatch(/\/sw\.js$/);
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByText("Push notifications")).toBeVisible();
-  await expect(page.getByText("Add VAPID keys to the bridge")).toBeVisible();
+  await expect(page.getByText("Available")).toBeVisible();
 });
 
 test("read-only devices cannot initiate mutations and still see update guidance", async ({ page }) => {
@@ -116,7 +116,7 @@ test("read-only devices cannot initiate mutations and still see update guidance"
   await page.route("**/api/pane/**", (route) => route.fulfill({ json: demoPaneById["w1:p1"] }));
 
   await page.goto("/");
-  await expect(page.getByText("Herdr Control 1.1.0 is available.")).toBeVisible();
+  await expect(page.getByText("Herdr Web 1.1.0 is available.")).toBeVisible();
   await expect(page.getByRole("link", { name: "View release" })).toHaveAttribute(
     "href",
     snapshot.update.latestUrl!,

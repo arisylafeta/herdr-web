@@ -7,7 +7,7 @@ import type { UpdateStatus } from "./types.ts";
 // Update-availability signal, surfaced on the (access-gated) /api/snapshot as `update`. Two
 // independent questions the running plugin can answer about itself:
 //
-//   • releaseAvailable — is a newer Herdr Control RELEASE published upstream? We read the repo's
+//   • releaseAvailable — is a newer Herdr Web RELEASE published upstream? We read the repo's
 //     published GitHub Releases over anonymous HTTPS and compare the newest `vX.Y.Z` to the running
 //     version. No `git` subprocess (the SSH origin has no agent under systemd --user, and a
 //     non-git install has no origin at all), no auth (the 60/hr anonymous limit is irrelevant at a

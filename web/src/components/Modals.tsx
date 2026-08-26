@@ -1,6 +1,8 @@
-import { AlertTriangle, Bell, ExternalLink, FolderPlus, LoaderCircle, RefreshCw, Search, SquarePen, X } from "lucide-react";
+import { AlertTriangle, Bell, BellRing, ExternalLink, FolderPlus, LoaderCircle, Monitor, Moon, RefreshCw, Search, SquarePen, Sun, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePushControl } from "../hooks/usePush";
+import { sendPushTest } from "../lib/api";
+import type { ThemePreference } from "../lib/theme";
 import type { AgentView, SnapshotResponse, UpdateStatus } from "../lib/types";
 import { StatusDot } from "./StatusDot";
 
@@ -235,20 +237,26 @@ export function CommandPalette({
 
 export function SettingsModal({
   open,
+  themePreference,
   update,
   updateBusy,
   readOnly,
+  onThemeChange,
   onClose,
   onCheckUpdates,
 }: {
   open: boolean;
+  themePreference: ThemePreference;
   update: UpdateStatus | undefined;
   updateBusy: boolean;
   readOnly: boolean;
+  onThemeChange: (preference: ThemePreference) => void;
   onClose: () => void;
   onCheckUpdates: () => void;
 }) {
   const { state, busy, error: pushError, setEnabled } = usePushControl(open);
+  const [pushTestBusy, setPushTestBusy] = useState(false);
+  const [pushTestStatus, setPushTestStatus] = useState<string | null>(null);
   const pushEnabled = Boolean(state?.subscribed && !state.userDisabled);
   const localPushEnabled = Boolean(state?.localSubscribed && !state.userDisabled);
   const pushToggleOn = pushEnabled || localPushEnabled;
@@ -265,7 +273,7 @@ export function SettingsModal({
           ? "Local subscription needs repair"
         : "Available"
       : state.availability === "server-off"
-        ? "Add VAPID keys to the bridge"
+        ? "Unavailable on this bridge"
         : state.availability === "insecure"
           ? "Requires HTTPS"
           : state.availability === "denied"
@@ -311,13 +319,40 @@ export function SettingsModal({
           </span>
           <span className="settings-update-actions">
             {update?.releaseAvailable && update.latestUrl && (
-              <a href={update.latestUrl} target="_blank" rel="noreferrer" title={`Open Herdr Control ${update.latest} release`}>
+              <a href={update.latestUrl} target="_blank" rel="noreferrer" title={`Open Herdr Web ${update.latest} release`}>
                 <ExternalLink />
               </a>
             )}
             <button className="icon-button" disabled={updateBusy || update?.enabled === false} onClick={onCheckUpdates} title={update?.enabled === false ? "Update repository is not configured" : "Check for updates"}>
               {updateBusy ? <LoaderCircle className="is-spinning" /> : <RefreshCw />}
             </button>
+          </span>
+        </div>
+        <div className="settings-theme-row">
+          <span className="settings-notification-copy">
+            <Sun />
+            <span>
+              <strong>Appearance</strong>
+              <small>Choose how Herdr Web looks</small>
+            </span>
+          </span>
+          <span className="theme-control" aria-label="Color theme">
+            {([
+              ["system", Monitor, "System"],
+              ["light", Sun, "Light"],
+              ["dark", Moon, "Dark"],
+            ] as const).map(([value, Icon, label]) => (
+              <button
+                key={value}
+                className={themePreference === value ? "is-active" : ""}
+                aria-label={label}
+                aria-pressed={themePreference === value}
+                onClick={() => onThemeChange(value)}
+                title={`${label} theme`}
+              >
+                <Icon />
+              </button>
+            ))}
           </span>
         </div>
         <div className="settings-notification-row">
@@ -328,15 +363,38 @@ export function SettingsModal({
               <small>{pushStatus}</small>
             </span>
           </span>
-          <button
-            className={`notification-toggle${pushToggleOn ? " is-on" : ""}`}
-            aria-pressed={pushToggleOn}
-            disabled={busy || !state || (readOnly && !pushToggleOn) || (!pushToggleOn && state.availability !== "ready")}
-            onClick={() => void setEnabled(!pushToggleOn)}
-            title={readOnly && !pushToggleOn ? "Read-only access" : pushToggleOn ? "Disable push notifications" : "Enable push notifications"}
-          >
-            {busy ? <LoaderCircle /> : <span />}
-          </button>
+          <span className="settings-push-actions">
+            {pushToggleOn && (
+              <button
+                className="push-test-button"
+                disabled={readOnly || pushTestBusy || !pushEnabled}
+                onClick={() => {
+                  setPushTestBusy(true);
+                  setPushTestStatus(null);
+                  void sendPushTest()
+                    .then((result) => setPushTestStatus(`Sent to ${result.subscribers} device${result.subscribers === 1 ? "" : "s"}`))
+                    .catch((reason: unknown) => setPushTestStatus(reason instanceof Error ? reason.message : "Test failed"))
+                    .finally(() => setPushTestBusy(false));
+                }}
+                title={readOnly ? "Read-only access" : "Send a test notification"}
+              >
+                {pushTestBusy ? <LoaderCircle className="is-spinning" /> : <BellRing />}
+                <span>{pushTestStatus ?? "Test"}</span>
+              </button>
+            )}
+            <button
+              className={`notification-toggle${pushToggleOn ? " is-on" : ""}`}
+              aria-pressed={pushToggleOn}
+              disabled={busy || !state || (readOnly && !pushToggleOn) || (!pushToggleOn && state.availability !== "ready")}
+              onClick={() => {
+                setPushTestStatus(null);
+                void setEnabled(!pushToggleOn);
+              }}
+              title={readOnly && !pushToggleOn ? "Read-only access" : pushToggleOn ? "Disable push notifications" : "Enable push notifications"}
+            >
+              {busy ? <LoaderCircle /> : <span />}
+            </button>
+          </span>
         </div>
       </div>
     </BaseModal>

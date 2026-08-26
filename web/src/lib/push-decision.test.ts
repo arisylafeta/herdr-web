@@ -50,7 +50,7 @@ describe("push decisions", () => {
     ).toMatchObject({ kind: "show", renotify: false, silent: true });
   });
 
-  it("uses Herdr Control notification tags", () => {
+  it("uses Herdr Web notification tags", () => {
     expect(tagFor("p1")).toBe("herdr-control:p1");
     expect(tagFor()).toBe("herdr-control");
   });

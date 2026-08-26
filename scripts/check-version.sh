@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version consistency gate for Herdr Control.
+# Version consistency gate for Herdr Web.
 #
 # The plugin's version lives in three files that MUST agree, plus a matching CHANGELOG entry:
 #   - herdr-plugin.toml   (canonical — this is what Herdr reads)

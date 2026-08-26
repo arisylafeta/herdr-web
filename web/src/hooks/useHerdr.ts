@@ -538,9 +538,9 @@ export function useHerdr() {
     } else if (update.bridgeStale) {
       pushNotice("info", "The bridge was updated on disk and needs a restart.");
     } else if (update.releaseAvailable) {
-      pushNotice("info", `Herdr Control ${update.latest} is available.`);
+      pushNotice("info", `Herdr Web ${update.latest} is available.`);
     } else {
-      pushNotice("success", "Herdr Control is up to date.");
+      pushNotice("success", "Herdr Web is up to date.");
     }
   }, [mode, pushNotice, runAction]);
 

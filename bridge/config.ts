@@ -146,7 +146,7 @@ export interface Config {
   publicHosts: string[];
   /** Public proxy scheme used for same-origin checks. HTTPS by default; HTTP only in serve HTTP mode. */
   publicScheme: "http" | "https";
-  /** Web Push (VAPID). All three required to enable push; otherwise push is disabled. */
+  /** Optional VAPID overrides. When absent, Push provisions a persistent private key pair. */
   vapidPublic: string;
   vapidPrivate: string;
   vapidSubject: string;

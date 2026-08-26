@@ -7,7 +7,7 @@ browser / native app
         |
         | REST + session-scoped WebSocket
         v
-Herdr Control bridge (Bun, loopback only)
+Herdr Web bridge (Bun, loopback only)
         |
         | RPC over Unix socket + native terminal controller stream
         v
@@ -45,7 +45,7 @@ Navigation is event-poked: `events.subscribe` accelerates authoritative `session
 
 ## Security
 
-- Run Herdr Control only on a single-user workstation (or inside an owner-isolated VM/container).
+- Run Herdr Web only on a single-user workstation (or inside an owner-isolated VM/container).
   Loopback prevents network ingress; it does not authenticate separate OS accounts on a shared host.
 - Bind the bridge to loopback only.
 - Expose it with `tailscale serve`; do not use public funneling.

@@ -108,7 +108,7 @@ export function Sidebar({
               <i />
             </span>
             <span className="brand-name">Herdr</span>
-            <span className="brand-stage">CONTROL</span>
+            <span className="brand-stage">WEB</span>
           </div>
           <button className="icon-button sidebar-close" onClick={onMobileClose} title="Close sidebar">
             <PanelLeftClose />

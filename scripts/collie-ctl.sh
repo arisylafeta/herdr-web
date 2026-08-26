@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Control script for Herdr Control. Invoked by the plugin's actions and usable directly.
+# Control script for Herdr Web. Invoked by the plugin's actions and usable directly.
 # The bridge runs as a systemd user service on Linux or a launchd user agent on macOS (NOT a Herdr
 # plugin pane — see ARCHITECTURE.md §3), so it survives Herdr restarts and is supervised independently.
 set -euo pipefail
@@ -50,7 +50,7 @@ export HERDR_PLUGIN_STATE_DIR="$PLUGIN_STATE_DIR"
 
 # If a legacy Collie env exists, make the split explicit rather than silently sharing credentials.
 if [ "$CONFIG_DIR" != "${HOME}/.config/collie" ] && [ -f "${HOME}/.config/collie/.env" ]; then
-  echo "note: Collie's ${HOME}/.config/collie/.env is not reused; Herdr Control config lives in ${CONFIG_DIR}/.env." >&2
+  echo "note: Collie's ${HOME}/.config/collie/.env is not reused; Herdr Web config lives in ${CONFIG_DIR}/.env." >&2
 fi
 
 # Source the plugin .env so both this script and the systemd unit share one config source.
@@ -81,7 +81,7 @@ SOCKET="${HERDR_SOCKET_PATH:-${HOME}/.config/herdr/herdr.sock}"
 # server) or "http" (plain HTTP over the tailnet — use this on Headscale / .internal domains).
 SERVE_MODE_RAW="$(printf '%s' "${COLLIE_SERVE_MODE:-https}" | tr '[:upper:]' '[:lower:]')"
 if [ "$SERVE_MODE_RAW" = "http" ]; then SERVE_MODE="http"; else SERVE_MODE="https"; fi
-# Use a dedicated public listener by default so Herdr Control does not replace an existing :443
+# Use a dedicated public listener by default so Herdr Web does not replace an existing :443
 # Serve mapping. Set 443 explicitly when this app should own the root MagicDNS URL.
 SERVE_PORT="$(normalize_port "${COLLIE_SERVE_PORT:-$PORT}" "$PORT")"
 BUN="$(command -v bun || true)"
@@ -215,7 +215,7 @@ resolved_public_hosts() {
   fi
 }
 
-# The version Herdr Control is actually serving — read from the built bundle's stamp
+# The version Herdr Web is actually serving — read from the built bundle's stamp
 # (web/dist/build-info.json, the same id the PWA footer and /api/config report), e.g. "0.16.0+3441656".
 # Falls back to the manifest version (tagged "web not built") when web/dist doesn't exist yet. This is
 # the authoritative "what's running", unlike Herdr's registry value which is cached at link time.
@@ -282,9 +282,9 @@ print_status_banner() {
   local ver; ver="$(collie_version)"
   echo
   if bridge_ready; then
-    echo "  ✓ Herdr Control is running  ·  v${ver}"
+    echo "  ✓ Herdr Web is running  ·  v${ver}"
   else
-    echo "  ⚠ Herdr Control isn't answering on :${PORT} yet (v${ver}) — check 'collie-ctl.sh logs'"
+    echo "  ⚠ Herdr Web isn't answering on :${PORT} yet (v${ver}) — check 'collie-ctl.sh logs'"
   fi
   echo "    service   ${svc}"
   echo "    local     http://127.0.0.1:${PORT}"
@@ -349,7 +349,7 @@ write_unit() {
   fi
   cat > "$UNIT_FILE" <<EOF
 [Unit]
-Description=Herdr Control
+Description=Herdr Web
 After=default.target
 # Never give up restarting — a phone-only operator can't run 'systemctl reset-failed'.
 StartLimitIntervalSec=0
@@ -419,7 +419,7 @@ cmd_start() {
     fi
   fi
   if ! bridge_ready; then
-    echo "error: Herdr Control did not pass its HTTP readiness probe; refusing to publish :${PORT} through Tailscale" >&2
+    echo "error: Herdr Web did not pass its HTTP readiness probe; refusing to publish :${PORT} through Tailscale" >&2
     return 1
   fi
   cmd_serve
@@ -464,7 +464,7 @@ cmd_stop() {
 cmd_restart() { cmd_stop; cmd_start; }
 
 # Tear the service down completely (the inverse of `start`): stop + disable it, remove the
-# systemd/launchd user service, remove Herdr Control's tailscale serve mapping, and drop the pidfile. Deliberately leaves your
+# systemd/launchd user service, remove Herdr Web's tailscale serve mapping, and drop the pidfile. Deliberately leaves your
 # config (${CONFIG_DIR}/.env) and the on-disk checkout in place — `uninstall` removes only what
 # `start` created. To remove the plugin registration too, run `herdr plugin uninstall herdr.control`
 # (or, for a linked clone, just delete the checkout).
@@ -478,7 +478,7 @@ cmd_uninstall() {
   fi
   if have_launchd; then rm -f "$LAUNCHD_FILE"; fi
   rm -f "${CONFIG_DIR}/herdr-control.pid"
-  echo "✓ uninstalled: service stopped & disabled, service definition removed, Herdr Control's tailscale serve mapping removed"
+  echo "✓ uninstalled: service stopped & disabled, service definition removed, Herdr Web's tailscale serve mapping removed"
   echo "  kept: ${CONFIG_DIR}/.env and the checkout — delete those to remove every trace"
 }
 
@@ -516,7 +516,7 @@ cmd_update() {
     echo "  ${reinstall}" >&2
     return 1
   fi
-  echo "updating Herdr Control (git pull --ff-only)…"
+  echo "updating Herdr Web (git pull --ff-only)…"
   git -C "$PLUGIN_ROOT" pull --ff-only
   exec bash "${PLUGIN_ROOT}/scripts/collie-ctl.sh" _apply-update
 }
@@ -634,16 +634,16 @@ remove_listener_record() {
   local removal_status=0
   remove_owned_listener "$mode" "$port" "$target" || removal_status=$?
   if [ "$removal_status" = "3" ]; then
-    echo "tailscale serve: recorded :${port} mapping is no longer owned by Herdr Control; leaving it untouched"
+    echo "tailscale serve: recorded :${port} mapping is no longer owned by Herdr Web; leaving it untouched"
     rm -f "$record_file"
     return 0
   fi
   if [ "$removal_status" = "0" ]; then
-    echo "tailscale serve: removed Herdr Control's recorded ${mode} :${port} mapping"
+    echo "tailscale serve: removed Herdr Web's recorded ${mode} :${port} mapping"
     rm -f "$record_file"
     return 0
   fi
-  echo "warning: could not remove recorded Herdr Control serve mapping; keeping its record for retry" >&2
+  echo "warning: could not remove recorded Herdr Web serve mapping; keeping its record for retry" >&2
   return 1
 }
 
@@ -718,7 +718,7 @@ cmd_serve() {
         return 1
       fi
     else
-      echo "error: existing :${old_port} listener is not verifiably owned by Herdr Control; refusing protocol replacement" >&2
+      echo "error: existing :${old_port} listener is not verifiably owned by Herdr Web; refusing protocol replacement" >&2
       return 1
     fi
   fi
@@ -759,7 +759,7 @@ cmd_serve() {
       if "$TAILSCALE" serve --bg "--${old_mode}=${old_port}" "$old_target" >/dev/null 2>&1; then
         echo "tailscale serve: restored previous ${old_mode} :${old_port} mapping after replacement failed"
       else
-        echo "warning: failed to restore previous Herdr Control serve mapping" >&2
+        echo "warning: failed to restore previous Herdr Web serve mapping" >&2
       fi
     fi
     return 1
@@ -771,7 +771,7 @@ cmd_serve() {
     local old_removal_status=0
     remove_owned_listener "$old_mode" "$old_port" "$old_target" || old_removal_status=$?
     if [ "$old_removal_status" = "0" ]; then
-      echo "tailscale serve: removed Herdr Control's previous ${old_mode} :${old_port} mapping"
+      echo "tailscale serve: removed Herdr Web's previous ${old_mode} :${old_port} mapping"
     elif [ "$old_removal_status" = "3" ]; then
       echo "tailscale serve: previous :${old_port} mapping now belongs to another app; leaving it untouched"
     else
@@ -792,7 +792,7 @@ cmd_serve() {
   rm -f "$SERVE_EXTRA_LISTENER_FILE"
 }
 
-# Remove ONLY Herdr Control's tailscale serve mapping — the inverse of cmd_serve, NOT a blanket
+# Remove ONLY Herdr Web's tailscale serve mapping — the inverse of cmd_serve, NOT a blanket
 # `tailscale serve reset` (which would wipe every unrelated mapping on the host). We turn off
 # exactly the listener cmd_serve recorded after its last successful setup. Best-effort teardown stays
 # idempotent when the mapping is already gone.
@@ -816,9 +816,9 @@ cmd_unserve() {
     remove_listener_record "$SERVE_EXTRA_LISTENER_FILE" || removed=0
   fi
   if [ "$removed" = "1" ]; then
-    echo "tailscale serve: Herdr Control mapping removed"
+    echo "tailscale serve: Herdr Web mapping removed"
   else
-    echo "warning: one or more Herdr Control serve mappings remain; retry 'unserve'" >&2
+    echo "warning: one or more Herdr Web serve mappings remain; retry 'unserve'" >&2
     return 1
   fi
 }

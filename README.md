@@ -1,6 +1,6 @@
-# Herdr Mobile Relay
+# Herdr Web
 
-Herdr Mobile Relay is the host-side companion for remote Herdr clients. It runs beside Herdr,
+Herdr Web is the host-side companion for remote Herdr clients. It runs beside Herdr,
 translates a bounded HTTP and WebSocket API into Herdr socket operations, and can publish that API
 privately through Tailscale Serve.
 
@@ -37,7 +37,7 @@ Tailscale Serve (tailnet-only reverse proxy)
           |
           | loopback HTTP
           v
-Herdr Mobile Relay (Bun, 127.0.0.1:8787 by default)
+Herdr Web bridge (Bun, 127.0.0.1:8787 by default)
           |
           | Herdr RPC over Unix socket
           v
@@ -73,7 +73,7 @@ integration currently target launchd and systemd-style environments.
 Replace `<owner>` with the GitHub account or organization that publishes this repository:
 
 ```bash
-herdr plugin install <owner>/herdr-plugin-mobile-relay --yes
+herdr plugin install <owner>/herdr-web --yes
 ```
 
 Herdr runs the manifest build step during installation. That step installs both Bun dependency
@@ -101,7 +101,7 @@ herdr plugin action invoke status --plugin herdr.control
 herdr plugin action invoke url --plugin herdr.control
 ```
 
-The URL action prints the address to enter in Herdr Mobile, normally similar to:
+The URL action prints the address to open in a browser or enter in Herdr Mobile, normally similar to:
 
 ```text
 https://your-machine.your-tailnet.ts.net:8787
@@ -115,8 +115,8 @@ terminal processes and therefore carry the authority of a remote shell.
 Clone the repository, then link it instead of installing a managed GitHub checkout:
 
 ```bash
-git clone https://github.com/<owner>/herdr-plugin-mobile-relay.git
-cd herdr-plugin-mobile-relay
+git clone https://github.com/<owner>/herdr-web.git
+cd herdr-web
 herdr plugin link "$(pwd)"
 herdr plugin action invoke start --plugin herdr.control
 ```
@@ -152,8 +152,8 @@ Copy [.env.example](.env.example) to `.env` in that directory. Important setting
 | `COLLIE_ALLOWED_ORIGINS` | unset | Extra full browser origins for custom reverse proxies. |
 | `COLLIE_DEVICE_HEADER` | unset | Optional proxy-injected device identity header. |
 | `COLLIE_DEVICE_ALLOWLIST` | unset | Devices allowed to perform write operations. |
-| `COLLIE_VAPID_PUBLIC` | unset | Optional Web Push public key. |
-| `COLLIE_VAPID_PRIVATE` | unset | Optional Web Push private key. |
+| `COLLIE_VAPID_PUBLIC` | auto-generated | Optional Web Push public-key override. |
+| `COLLIE_VAPID_PRIVATE` | auto-generated | Optional Web Push private-key override. |
 | `COLLIE_VAPID_SUBJECT` | generic mailto | Optional Web Push administrator contact. |
 
 ### Tailscale
@@ -193,14 +193,18 @@ read-only access.
 
 ### Web Push
 
-Generate VAPID keys with:
+Herdr Web generates a persistent VAPID key pair in its private state directory on first start. Open
+Settings, enable Push notifications, and use the Test button to verify delivery.
+
+To supply an existing key pair instead, generate keys with:
 
 ```bash
 bunx web-push generate-vapid-keys
 ```
 
-Set all three `COLLIE_VAPID_*` values, restart the relay, then subscribe from the browser client.
-Push subscriptions and preferences are stored in the private plugin state directory.
+Set the two key values and optionally `COLLIE_VAPID_SUBJECT`, then restart the bridge. Push keys,
+subscriptions, and preferences are stored with owner-only permissions in the private plugin state
+directory.
 
 ## Plugin actions
 

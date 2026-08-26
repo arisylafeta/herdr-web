@@ -1,5 +1,5 @@
 id = "herdr.control"
-name = "Herdr Control"
+name = "Herdr Web"
 version = "0.1.0"
 min_herdr_version = "0.7.0"
 description = "T3 Code-style web control plane for durable Herdr sessions, served over Tailscale"

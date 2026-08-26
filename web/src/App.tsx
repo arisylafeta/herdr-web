@@ -13,10 +13,12 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { useHerdr } from "./hooks/useHerdr";
 import { usePushSetup } from "./hooks/usePush";
+import { useTheme } from "./lib/theme";
 import { isReadOnly, type AgentView } from "./lib/types";
 
 export default function App() {
   usePushSetup();
+  const theme = useTheme();
   const herdr = useHerdr();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(() =>
@@ -144,7 +146,7 @@ export default function App() {
         ) : update?.releaseAvailable ? (
           <div className="update-banner" role="status">
             <RefreshCw />
-            <span>Herdr Control {update.latest} is available.</span>
+            <span>Herdr Web {update.latest} is available.</span>
             {update.latestUrl && (
               <a href={update.latestUrl} target="_blank" rel="noreferrer">
                 View release
@@ -208,9 +210,11 @@ export default function App() {
       />
       <SettingsModal
         open={settingsOpen}
+        themePreference={theme.preference}
         update={update}
         updateBusy={herdr.actionBusy}
         readOnly={readOnly}
+        onThemeChange={theme.setPreference}
         onCheckUpdates={() => void herdr.checkForUpdates()}
         onClose={() => {
           setSettingsOpen(false);

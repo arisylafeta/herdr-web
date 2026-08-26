@@ -1,10 +1,10 @@
 {
-  "name": "herdr-control",
+  "name": "herdr-web",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "A T3 Code-inspired control plane for Herdr sessions, built on the Collie bridge architecture",
+  "description": "A responsive web control plane for durable Herdr sessions",
   "scripts": {
     "dev": "bun run bridge/index.ts",
     "dev:bridge": "bun --watch bridge/index.ts",

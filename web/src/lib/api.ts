@@ -179,6 +179,16 @@ export function checkForUpdates(): Promise<UpdateStatus> {
   return request("/api/update/check", { method: "POST" });
 }
 
+export function sendPushTest(): Promise<{ ok: true; subscribers: number }> {
+  return request("/api/push-test", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "Herdr Web test",
+      body: "Push notifications are working on this device.",
+    }),
+  });
+}
+
 export async function registerPushSubscription(subscription: PushSubscription): Promise<void> {
   const response = await fetch("/api/subscribe", {
     method: "POST",

@@ -2090,7 +2090,7 @@ export function checkAccess(
   level: "read" | "write" = "read",
 ): { ok: true } | { ok: false; reason: string } {
   const host = effectiveRequestHost(req);
-  // Deliberate threat boundary: Herdr Control is an owner-scoped, single-user workstation service.
+  // Deliberate threat boundary: Herdr Web is an owner-scoped, single-user workstation service.
   // TCP loopback is not an OS-user authentication mechanism; multi-user hosts need an isolating VM
   // or user namespace rather than treating this local-operator exemption as cross-user security.
   const trustedLoopback = isDirectLoopbackRequest(req, cfg);

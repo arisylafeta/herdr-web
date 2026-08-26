@@ -46,7 +46,7 @@ async function handlePush(event: PushEvent): Promise<void> {
     // Web Push subscriptions are userVisibleOnly. Satisfy that contract even for a retraction, then
     // immediately close the replacement tagged slot so stale agent/update alerts disappear without
     // Chromium generating a generic fallback notification or penalizing future deliveries.
-    await self.registration.showNotification("Herdr Control", {
+    await self.registration.showNotification("Herdr Web", {
       body: "Notification resolved",
       tag: decision.tag,
       silent: true,

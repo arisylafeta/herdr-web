@@ -5,6 +5,7 @@ import {
   createTab,
   createWorkspace,
   fetchPane,
+  sendPushTest,
   sendReply,
 } from "./api";
 
@@ -90,6 +91,27 @@ describe("sendReply", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ text: "deploy", submit: true, requestId: "draft-123" }),
+      }),
+    ]);
+  });
+});
+
+describe("sendPushTest", () => {
+  it("requests a diagnostic notification from the bridge", async () => {
+    vi.restoreAllMocks();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, subscribers: 1 }), { status: 200 }),
+    );
+
+    await expect(sendPushTest()).resolves.toEqual({ ok: true, subscribers: 1 });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/push-test",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          title: "Herdr Web test",
+          body: "Push notifications are working on this device.",
+        }),
       }),
     ]);
   });

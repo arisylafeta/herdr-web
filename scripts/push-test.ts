@@ -8,7 +8,7 @@
 // so the helper resolves the same configured bridge port.
 import { loadConfig } from "../bridge/config.ts";
 
-const [title = "Herdr Control test", body = "Push works — tap to open Herdr Control", paneId = "test"] =
+const [title = "Herdr Web test", body = "Push works — tap to open Herdr Web", paneId = "test"] =
   process.argv.slice(2);
 
 const cfg = loadConfig();
@@ -21,7 +21,7 @@ try {
   });
 } catch (error) {
   console.error(
-    `✗ could not reach the Herdr Control bridge on 127.0.0.1:${cfg.port}: ` +
+    `✗ could not reach the Herdr Web bridge on 127.0.0.1:${cfg.port}: ` +
       `${error instanceof Error ? error.message : String(error)}\n` +
       "  Start the bridge, then retry.",
   );
@@ -30,7 +30,7 @@ try {
 if (!response.ok) {
   console.error(
     `✗ push test failed (${response.status}): ${await response.text()}\n` +
-      "  Confirm push is configured and enable notifications in Herdr Control Settings.",
+      "  Confirm push is configured and enable notifications in Herdr Web Settings.",
   );
   process.exit(1);
 }
