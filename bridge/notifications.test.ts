@@ -5,6 +5,7 @@ import {
   NotificationReconciler,
   makeNotifySink,
   type HerdSummary,
+  type CompletionLedger,
   type NotifyClock,
   type NotifySink,
 } from "./notifications.ts";
@@ -68,6 +69,19 @@ class RecordingSink implements NotifySink {
   }
 }
 
+class MemoryCompletionLedger implements CompletionLedger {
+  readonly entries = new Map<string, number>();
+  get(paneId: string): number | undefined {
+    return this.entries.get(paneId);
+  }
+  set(paneId: string, completedAt: number): void {
+    this.entries.set(paneId, completedAt);
+  }
+  delete(paneId: string): void {
+    this.entries.delete(paneId);
+  }
+}
+
 function agentNamed(paneId: string, name: string, status: AgentStatus): AgentView {
   return {
     paneId,
@@ -88,14 +102,26 @@ const agent = (paneId: string, status: AgentStatus) => agentNamed(paneId, "claud
 // flip a preference and call `coord.applyPrefs()` to exercise the runtime-change path. Defaults to
 // both kinds enabled, matching the coordinator's old static {blocked,done} set (keeps the existing
 // debounce/coalesce/retract suites unchanged).
-function setup(prefs: { blocked: boolean; done: boolean } = { blocked: true, done: true }) {
+function setup(
+  prefs: { blocked: boolean; done: boolean } = { blocked: true, done: true },
+  options: { ledger?: MemoryCompletionLedger; now?: () => number } = {},
+) {
   const clock = new FakeClock();
   const sink = new RecordingSink();
+  const ledger = options.ledger ?? new MemoryCompletionLedger();
   const live = { ...prefs };
   const isNotifiable = (s: AgentStatus): boolean =>
     s === "blocked" ? live.blocked : s === "done" ? live.done : false;
-  const coord = new NotificationCoordinator(clock, sink, 30_000, isNotifiable, 600_000);
-  return { clock, sink, coord, prefs: live };
+  const coord = new NotificationCoordinator(
+    clock,
+    sink,
+    30_000,
+    isNotifiable,
+    600_000,
+    ledger,
+    options.now ?? (() => 0),
+  );
+  return { clock, sink, coord, prefs: live, ledger };
 }
 
 describe("NotificationCoordinator — debounce", () => {
@@ -108,13 +134,13 @@ describe("NotificationCoordinator — debounce", () => {
     expect(clock.scheduledDelays).toEqual([30_000, 600_000]);
   });
 
-  test("does not arm a completion notification for a focused pane", () => {
+  test("does not treat a persistent focused snapshot flag as proof the completion was seen", () => {
     const { clock, sink, coord } = setup();
     const completed = { ...agent("p1", "done"), focused: true };
 
     coord.onTransition(completed, "working", "done");
 
-    expect(clock.armed).toBe(0);
+    expect(clock.armed).toBe(1);
     expect(sink.events).toEqual([]);
   });
 
@@ -223,6 +249,18 @@ describe("NotificationCoordinator — coalescing", () => {
 });
 
 describe("NotificationCoordinator — retraction", () => {
+  test("resumes the remaining completion delay after reconstruction", () => {
+    const ledger = new MemoryCompletionLedger();
+    const first = setup(undefined, { ledger, now: () => 1_000 });
+    first.coord.onTransition(agent("p1", "done"), "working", "done");
+
+    const resumed = setup(undefined, { ledger, now: () => 241_000 });
+    resumed.coord.reconcile([agent("p1", "done")]);
+
+    expect(resumed.clock.scheduledDelays).toEqual([360_000]);
+    expect(resumed.sink.renders).toEqual([]);
+  });
+
   test("does not resurrect a completion without a known completion time", () => {
     const { sink, coord } = setup();
 
@@ -239,18 +277,18 @@ describe("NotificationCoordinator — retraction", () => {
     expect(sink.events.at(-1)).toEqual({ kind: "clear" });
   });
 
-  test("reconcile cancels stale debounce timers before restoring the current herd", () => {
+  test("reconcile preserves a debounce timer that still matches current state", () => {
     const { clock, sink, coord } = setup();
     coord.onTransition(agent("p1", "blocked"), "working", "blocked");
     expect(clock.armed).toBe(1);
 
     coord.reconcile([agent("p1", "blocked")]);
-    expect(clock.armed).toBe(0);
-    expect(sink.renders).toHaveLength(1);
-    expect(sink.last).toMatchObject({ title: "claude needs you", renotify: false });
+    expect(clock.armed).toBe(1);
+    expect(sink.renders).toHaveLength(0);
 
     clock.fireAll();
     expect(sink.renders).toHaveLength(1);
+    expect(sink.last).toMatchObject({ title: "claude needs you", renotify: true });
   });
 
   test("clears the herd once the last outstanding agent resolves", () => {
@@ -307,6 +345,20 @@ describe("NotificationReconciler — outage recovery", () => {
 });
 
 describe("NotificationCoordinator — type preferences", () => {
+  test("reconciliation preserves an unrelated pending completion", () => {
+    const { clock, sink, coord, prefs } = setup({ blocked: false, done: true });
+    const completed = agent("p1", "done");
+    coord.onTransition(completed, "working", "done");
+    expect(clock.scheduledDelays).toEqual([600_000]);
+
+    prefs.blocked = true;
+    coord.reconcile([completed]);
+
+    expect(clock.scheduledDelays).toEqual([600_000]);
+    expect(clock.armed).toBe(1);
+    expect(sink.renders).toEqual([]);
+  });
+
   test("with done muted, a done transition never pushes — even after the window", () => {
     const { clock, sink, coord } = setup({ blocked: true, done: false });
     coord.onTransition(agent("p1", "done"), "working", "done");

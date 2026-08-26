@@ -126,6 +126,12 @@ export function sendKeys(
   });
 }
 
+export function markPaneSeen(paneId: string, session?: string): Promise<ActionResponse> {
+  return request(withSession(`/api/pane/${encodeURIComponent(paneId)}/seen`, session), {
+    method: "POST",
+  });
+}
+
 export function closePane(paneId: string, session?: string): Promise<ActionResponse> {
   return request(withSession(`/api/pane/${encodeURIComponent(paneId)}/close`, session), {
     method: "POST",

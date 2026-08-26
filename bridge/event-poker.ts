@@ -77,6 +77,7 @@ export class EventPoker {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly pokeListeners = new Set<() => void>();
   private readonly healthListeners = new Set<(healthy: boolean) => void>();
+  private readonly paneFocusListeners = new Set<(paneId: string) => void>();
 
   constructor(
     private readonly client: HerdrClient,
@@ -94,6 +95,11 @@ export class EventPoker {
   onHealth(cb: (healthy: boolean) => void): () => void {
     this.healthListeners.add(cb);
     return () => this.healthListeners.delete(cb);
+  }
+
+  onPaneFocused(cb: (paneId: string) => void): () => void {
+    this.paneFocusListeners.add(cb);
+    return () => this.paneFocusListeners.delete(cb);
   }
 
   start(): void {
@@ -139,6 +145,18 @@ export class EventPoker {
       },
       onEvent: (event, data) => {
         if (this.stream !== handle) return;
+        if (event === "pane.focused") {
+          const record = typeof data === "object" && data !== null
+            ? data as Record<string, unknown>
+            : null;
+          const pane = record && typeof record.pane === "object" && record.pane !== null
+            ? record.pane as Record<string, unknown>
+            : record;
+          const paneId = pane?.pane_id;
+          if (typeof paneId === "string") {
+            for (const listener of this.paneFocusListeners) listener(paneId);
+          }
+        }
         this.schedulePoke();
       },
       onDown: (reason) => {

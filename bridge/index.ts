@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { AuditLog, fileAuditAppender } from "./audit.ts";
 import { loadConfig } from "./config.ts";
+import { CompletionStateStore } from "./completion-state.ts";
 import { EventPoker } from "./event-poker.ts";
 import { HerdrClient } from "./herdr-client.ts";
 import { LiveUpdateHub } from "./live-updates.ts";
@@ -56,6 +57,9 @@ await snooze.load();
 
 const notifyPrefs = new NotifyPrefsStore(cfg);
 await notifyPrefs.load();
+
+const completionState = new CompletionStateStore(join(cfg.stateDir, "completion-state.json"));
+await completionState.load();
 
 // Append-only audit trail of write-level actions (see audit.ts). A write failure here is swallowed
 // inside record() so it can never break the user action it's auditing.
@@ -150,16 +154,13 @@ const makeSession: SessionFactory = (name, socketPath, isPrimary) => {
     cfg.notifyDelayMs,
     (status) => notifyPrefs.isNotifiable(status),
     cfg.doneNotifyDelayMs,
+    completionState.forSession(name),
   );
   const notificationReconciler = new NotificationReconciler(notifications);
-  engine.onUpdate((snapshot) => {
-    notificationReconciler.onUpdate(snapshot);
-    for (const agent of snapshot.agents) {
-      if (agent.focused) notifications.onSeen(agent.paneId);
-    }
-  });
+  engine.onUpdate((snapshot) => notificationReconciler.onUpdate(snapshot));
   engine.onTransition((agent, from, to) => notifications.onTransition(agent, from, to));
   engine.onRemove((paneId) => notifications.onRemove(paneId));
+  poker.onPaneFocused((paneId) => notifications.onSeen(paneId));
 
   engine.start();
   poker.start();

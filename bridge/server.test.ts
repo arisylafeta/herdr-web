@@ -211,6 +211,38 @@ describe("config route access", () => {
   });
 });
 
+describe("pane seen route", () => {
+  test("marks the selected session pane as seen without touching its terminal", async () => {
+    const seen: string[] = [];
+    const server = startServer({
+      cfg: cfg({ port: 0 }),
+      registry: {
+        get: () => ({
+          name: "default",
+          herdr: {},
+          notifications: { onSeen: (paneId: string) => seen.push(paneId) },
+        }),
+      } as never,
+      push: { enabled: false, publicKey: "" } as never,
+      snooze: {} as never,
+      notifyPrefs: {} as never,
+      updateMonitor: {} as never,
+      audit: {} as never,
+      liveUpdates: {} as never,
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.port}/api/pane/p1/seen`, {
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(seen).toEqual(["p1"]);
+    } finally {
+      server.stop(true);
+    }
+  });
+});
+
 describe("static frontend recovery", () => {
   test("returns the documented build hint when the root index is absent", async () => {
     const response = await serveStatic("/", `/tmp/herdr-control-missing-${crypto.randomUUID()}`);

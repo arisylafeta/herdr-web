@@ -6,6 +6,7 @@ import {
   createWorkspace as createWorkspaceRequest,
   fetchPane,
   fetchSnapshot,
+  markPaneSeen as markPaneSeenRequest,
   sendKeys as sendKeysRequest,
   sendReply,
   uploadImage as uploadImageRequest,
@@ -21,6 +22,7 @@ import {
   type TransportMode,
 } from "../lib/connectionState";
 import type { AgentView, PaneReadResponse, SnapshotResponse } from "../lib/types";
+import { shouldMarkPaneSeen } from "../lib/paneSeen";
 
 const INITIAL_PARAMS = new URLSearchParams(window.location.search);
 const FORCE_DEMO = demoModeFromSearch(window.location.search);
@@ -228,6 +230,17 @@ export function useHerdr() {
   const allPanes = useMemo(() => [...snapshot.agents, ...snapshot.shellPanes], [snapshot]);
   const selectedPane = allPanes.find((pane) => pane.paneId === selectedPaneId) ?? null;
   const selectedPaneOutput = paneOutput?.paneId === selectedPaneId ? paneOutput : null;
+
+  useEffect(() => {
+    if (mode === "demo" || !selectedPaneId) return;
+    const markVisibleCompletion = () => {
+      if (!shouldMarkPaneSeen(selectedPane?.status, document.visibilityState)) return;
+      void markPaneSeenRequest(selectedPaneId, session).catch(() => undefined);
+    };
+    markVisibleCompletion();
+    document.addEventListener("visibilitychange", markVisibleCompletion);
+    return () => document.removeEventListener("visibilitychange", markVisibleCompletion);
+  }, [mode, selectedPane?.status, selectedPaneId, session]);
 
   const selectPane = useCallback((paneId: string) => {
     setSelectedPaneId(paneId);

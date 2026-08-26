@@ -5,6 +5,7 @@ import {
   createTab,
   createWorkspace,
   fetchPane,
+  markPaneSeen,
   sendPushTest,
   sendReply,
 } from "./api";
@@ -92,6 +93,22 @@ describe("sendReply", () => {
         method: "POST",
         body: JSON.stringify({ text: "deploy", submit: true, requestId: "draft-123" }),
       }),
+    ]);
+  });
+});
+
+describe("markPaneSeen", () => {
+  it("marks the visible completed pane in its Herdr session", async () => {
+    vi.restoreAllMocks();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    await markPaneSeen("p1", "default");
+
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/pane/p1/seen?session=default",
+      expect.objectContaining({ method: "POST" }),
     ]);
   });
 });

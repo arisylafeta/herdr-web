@@ -50,9 +50,11 @@ function makePoker(opts?: { debounceMs?: number; backoffMs?: number[] }) {
   });
   const pokes: number[] = [];
   const health: boolean[] = [];
+  const focused: string[] = [];
   poker.onPoke(() => pokes.push(1));
   poker.onHealth((h) => health.push(h));
-  return { client, poker, pokes, health };
+  poker.onPaneFocused((paneId) => focused.push(paneId));
+  return { client, poker, pokes, health, focused };
 }
 
 describe("buildSubscriptions / sameIdSet", () => {
@@ -98,6 +100,16 @@ describe("EventPoker — health", () => {
 });
 
 describe("EventPoker — debounced poke", () => {
+  test("reports an explicit pane focus event as seen", () => {
+    const { client, poker, focused } = makePoker();
+    poker.start();
+
+    client.last.onEvent("pane.focused", { pane_id: "w1:p1" });
+
+    expect(focused).toEqual(["w1:p1"]);
+    poker.stop();
+  });
+
   test("coalesces a burst of events into a single trailing poke", async () => {
     const { client, poker, pokes } = makePoker({ debounceMs: 10 });
     poker.start();

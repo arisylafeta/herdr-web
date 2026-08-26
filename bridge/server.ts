@@ -98,7 +98,7 @@ const MAX_TERMINAL_COLS = 400;
 const MIN_TERMINAL_ROWS = 5;
 const MAX_TERMINAL_ROWS = 200;
 
-const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|input|submit|keys|upload|close))?$/;
+const PANE_ROUTE = /^\/api\/pane\/([^/]+)(?:\/(reply|input|submit|keys|upload|close|seen))?$/;
 const TAB_ROUTE = /^\/api\/tab\/([^/]+)$/;
 const WORKTREE_ROUTE = /^\/api\/worktree\/([^/]+)$/;
 const PANE_FOCUS_ROUTE = /^\/api\/focus\/([^/]+)$/;
@@ -638,8 +638,8 @@ export function startServer(opts: {
       if (paneMatch) {
         const paneId = decodeURIComponent(paneMatch[1]!);
         const action = paneMatch[2];
-        // Reading a pane is allowed for any access-gated client; every action (reply/keys/upload/
-        // close) types into or restructures a terminal, so it additionally needs an authorised device.
+        // Reading a pane is allowed for any access-gated client. Terminal actions and the shared
+        // notification acknowledgement additionally need an authorised device.
         const denied = guard(req, cfg, action ? "write" : "read");
         if (denied) return denied;
         const rt = registry.get(sessionName);
@@ -649,6 +649,10 @@ export function startServer(opts: {
         const device = action ? deviceAuth(req, cfg).device : null;
 
         if (!action && req.method === "GET") return readPane(herdr, cfg, paneId, url, req);
+        if (action === "seen" && req.method === "POST") {
+          rt.notifications.onSeen(paneId);
+          return json({ ok: true } satisfies ActionResponse, req.headers.get("accept-encoding"));
+        }
         if (action === "reply" && req.method === "POST") {
           return replyPane(
             herdr,

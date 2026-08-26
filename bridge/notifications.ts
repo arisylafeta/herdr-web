@@ -5,7 +5,7 @@ import type { AgentStatus, AgentView } from "./types.ts";
 // lifecycle and collapses the herd into a single, always-accurate notification:
 //
 //   • Debounce + cancel — short-lived blocked states never reach your phone. Done uses a longer
-//     window and pane focus as the available "seen" signal, cancelling work managed in the terminal.
+//     window and explicit terminal-focus / visible-web events as "seen" signals.
 //   • Coalesce — instead of N stacked notifications, we keep ONE summary of everything currently
 //     outstanding: the named agent when exactly one needs you, or "N agents need you" for several.
 //     Each change re-renders that single summary; when the last one resolves, we clear it.
@@ -22,6 +22,19 @@ export interface NotifyClock<H> {
   schedule(fn: () => void, delayMs: number): H;
   cancel(handle: H): void;
 }
+
+/** Durable completion timestamps for one Herdr session, keyed by pane id. */
+export interface CompletionLedger {
+  get(paneId: string): number | undefined;
+  set(paneId: string, completedAt: number): void;
+  delete(paneId: string): void;
+}
+
+const memoryOnlyCompletionLedger: CompletionLedger = {
+  get: () => undefined,
+  set: () => undefined,
+  delete: () => undefined,
+};
 
 /** The current state of the herd's single notification, derived from everything outstanding. */
 export interface HerdSummary {
@@ -170,20 +183,18 @@ export class NotificationCoordinator<H = unknown> {
     // change is honoured. A disabled kind behaves exactly like a non-notifiable status (idle/working).
     private readonly isNotifiable: (status: AgentStatus) => boolean,
     private readonly doneDelayMs: number = delayMs,
+    private readonly completions: CompletionLedger = memoryOnlyCompletionLedger,
+    private readonly now: () => number = Date.now,
   ) {}
 
   /** Wire to `StateEngine.onTransition`. */
   onTransition(agent: AgentView, _from: AgentStatus, to: AgentStatus): void {
     const id = agent.paneId;
+    if (to === "done") this.completions.set(id, this.now());
+    else this.completions.delete(id);
     if (!this.isNotifiable(to)) {
       // Resolved to a non-notifiable (or preference-disabled) state: drop a still-pending alert,
       // retract a delivered one.
-      this.resolve(id);
-      return;
-    }
-    if (to === "done" && agent.focused) {
-      // A focused pane is already in front of the terminal operator, so its completion has been
-      // seen and must not become a delayed phone notification.
       this.resolve(id);
       return;
     }
@@ -196,21 +207,18 @@ export class NotificationCoordinator<H = unknown> {
       cwd: agent.cwd,
       status: to as NotifiableStatus,
     };
-    const handle = this.clock.schedule(() => {
-      this.pending.delete(id);
-      this.outstanding.set(id, alert);
-      this.emit(true);
-    }, alert.status === "done" ? this.doneDelayMs : this.delayMs);
-    this.pending.set(id, { handle, status: alert.status });
+    this.arm(id, alert, alert.status === "done" ? this.doneDelayMs : this.delayMs);
   }
 
   /** Wire to `StateEngine.onRemove` — a vanished pane is implicitly resolved. */
   onRemove(paneId: string): void {
+    this.completions.delete(paneId);
     this.resolve(paneId);
   }
 
   /** Mark a completed pane as seen, cancelling or retracting only its done notification. */
   onSeen(paneId: string): void {
+    this.completions.delete(paneId);
     if (this.pending.get(paneId)?.status === "done") this.cancelPending(paneId);
     if (this.outstanding.get(paneId)?.status !== "done") return;
     this.outstanding.delete(paneId);
@@ -241,22 +249,36 @@ export class NotificationCoordinator<H = unknown> {
 
   /** Reconcile a notification slot preserved across process restart with the first fresh snapshot. */
   reconcile(agents: AgentView[]): void {
-    // Reconciliation replaces every derived alert with an authoritative snapshot. Cancel timers
-    // armed before it (notably transitions observed while snoozed) so they cannot later re-alert
-    // with stale state or duplicate the restored summary.
-    for (const id of [...this.pending.keys()]) this.cancelPending(id);
-    this.outstanding.clear();
+    const byId = new Map(agents.map((agent) => [agent.paneId, agent]));
+    // Preserve a matching timer. Reconciliation may be triggered by an unrelated preference change,
+    // a snooze ending, or a restart; none should reset a still-valid debounce window.
+    for (const [id, pending] of [...this.pending]) {
+      const current = byId.get(id);
+      if (current?.status === pending.status && this.isNotifiable(current.status)) continue;
+      this.cancelPending(id);
+    }
+    for (const [id, alert] of [...this.outstanding]) {
+      const current = byId.get(id);
+      if (current?.status === alert.status && this.isNotifiable(current.status)) continue;
+      this.outstanding.delete(id);
+    }
     for (const agent of agents) {
       if (!this.isNotifiable(agent.status)) continue;
-      // A snapshot cannot tell us when a pane completed, so resurrecting Done here would bypass
-      // its ten-minute unseen window after a restart or snooze. Only live transitions arm Done.
-      if (agent.status === "done") continue;
-      this.outstanding.set(agent.paneId, {
+      if (this.pending.has(agent.paneId) || this.outstanding.has(agent.paneId)) continue;
+      const alert: Alert = {
         agent: agent.agent,
         workspaceLabel: agent.workspaceLabel,
         cwd: agent.cwd,
         status: agent.status as NotifiableStatus,
-      });
+      };
+      if (agent.status === "done") {
+        const completedAt = this.completions.get(agent.paneId);
+        if (completedAt === undefined) continue;
+        const remaining = Math.max(0, this.doneDelayMs - (this.now() - completedAt));
+        this.arm(agent.paneId, alert, remaining);
+      } else {
+        this.outstanding.set(agent.paneId, alert);
+      }
     }
     this.emit(false);
   }
@@ -318,6 +340,15 @@ export class NotificationCoordinator<H = unknown> {
         ? `${n} agents done`
         : `${n} agents need attention`;
     return { title, body: alerts.map((a) => a.agent).join(", "), renotify };
+  }
+
+  private arm(id: string, alert: Alert, delayMs: number): void {
+    const handle = this.clock.schedule(() => {
+      this.pending.delete(id);
+      this.outstanding.set(id, alert);
+      this.emit(true);
+    }, delayMs);
+    this.pending.set(id, { handle, status: alert.status });
   }
 
   private cancelPending(id: string): void {
