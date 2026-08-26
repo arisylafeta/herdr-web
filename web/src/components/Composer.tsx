@@ -44,7 +44,7 @@ export function Composer({ pane, tab, session, busy, running, readOnly, onSend, 
   const contextId = `${session ?? ""}\n${pane?.paneId ?? ""}`;
   const contextIdRef = useRef(contextId);
   contextIdRef.current = contextId;
-  const disabled = !pane || busy || running || readOnly;
+  const disabled = !pane || busy || readOnly;
 
   useEffect(() => {
     setValue("");
@@ -109,11 +109,24 @@ export function Composer({ pane, tab, session, busy, running, readOnly, onSend, 
 
         <div className="composer-footer">
           <div className="composer-controls">
-            <button className="composer-control model-control" disabled={!pane}>
-              <span className="agent-mini-mark">{pane?.agent === "shell" ? ">_" : pane?.agent.slice(0, 1).toUpperCase()}</span>
-              <span>{pane?.agent ?? "Agent"}</span>
-              <ChevronDown />
-            </button>
+            {running ? (
+              <button
+                className="composer-control model-control stop-control"
+                onClick={onStop}
+                disabled={!pane || readOnly}
+                aria-label="Stop agent"
+                title="Send Esc to stop agent"
+              >
+                <Square />
+                <span>Stop</span>
+              </button>
+            ) : (
+              <button className="composer-control model-control" disabled={!pane}>
+                <span className="agent-mini-mark">{pane?.agent === "shell" ? ">_" : pane?.agent.slice(0, 1).toUpperCase()}</span>
+                <span>{pane?.agent ?? "Agent"}</span>
+                <ChevronDown />
+              </button>
+            )}
             <span className="composer-divider" />
             <button className="composer-control compact-hide" disabled={!pane}>
               <TerminalSquare />
@@ -167,17 +180,7 @@ export function Composer({ pane, tab, session, busy, running, readOnly, onSend, 
                 </div>
               )}
             </div>
-            {running ? (
-              <button
-                className="send-button is-busy"
-                onClick={onStop}
-                disabled={!pane || readOnly}
-                aria-label="Stop agent"
-                title="Stop agent"
-              >
-                <Square />
-              </button>
-            ) : busy ? (
+            {busy ? (
               <button className="send-button is-busy" title="Action in progress" disabled>
                 <Square />
               </button>

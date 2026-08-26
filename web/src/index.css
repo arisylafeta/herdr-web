@@ -1157,6 +1157,16 @@ svg {
   text-transform: capitalize;
 }
 
+.stop-control {
+  color: var(--red);
+}
+
+.stop-control svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+}
+
 .agent-mini-mark {
   display: grid;
   width: 19px;
