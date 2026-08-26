@@ -38,6 +38,29 @@
   --toast-bg: #242525;
   --toggle-bg: #303232;
   --toggle-knob: #a7acad;
+  --terminal-bg: #151616;
+  --terminal-surface: #191a1a;
+  --terminal-border: rgba(255, 255, 255, 0.075);
+  --terminal-text: #c8cecd;
+  --terminal-text-soft: #c8cbcc;
+  --terminal-muted: #8b9091;
+  --terminal-muted-dim: #626667;
+  --terminal-ansi-black: #000000;
+  --terminal-ansi-red: #cd3131;
+  --terminal-ansi-green: #0dbc79;
+  --terminal-ansi-yellow: #e5e510;
+  --terminal-ansi-blue: #2472c8;
+  --terminal-ansi-magenta: #bc3fbc;
+  --terminal-ansi-cyan: #11a8cd;
+  --terminal-ansi-white: #e5e5e5;
+  --terminal-ansi-bright-black: #666666;
+  --terminal-ansi-bright-red: #f14c4c;
+  --terminal-ansi-bright-green: #23d18b;
+  --terminal-ansi-bright-yellow: #f5f543;
+  --terminal-ansi-bright-blue: #3b8eea;
+  --terminal-ansi-bright-magenta: #d670d6;
+  --terminal-ansi-bright-cyan: #29b8db;
+  --terminal-ansi-bright-white: #ffffff;
 }
 
 html[data-theme="light"] {
@@ -75,6 +98,29 @@ html[data-theme="light"] {
   --toast-bg: #ffffff;
   --toggle-bg: #d8ddda;
   --toggle-knob: #ffffff;
+  --terminal-bg: #fbfcfa;
+  --terminal-surface: #f0f2ef;
+  --terminal-border: rgba(27, 35, 31, 0.12);
+  --terminal-text: #26312c;
+  --terminal-text-soft: #39443f;
+  --terminal-muted: #5f6b65;
+  --terminal-muted-dim: #78827d;
+  --terminal-ansi-black: #1f2522;
+  --terminal-ansi-red: #ae3039;
+  --terminal-ansi-green: #087447;
+  --terminal-ansi-yellow: #806000;
+  --terminal-ansi-blue: #285fb0;
+  --terminal-ansi-magenta: #8543a0;
+  --terminal-ansi-cyan: #0b6f7c;
+  --terminal-ansi-white: #606b65;
+  --terminal-ansi-bright-black: #4f5a54;
+  --terminal-ansi-bright-red: #ba3741;
+  --terminal-ansi-bright-green: #087b4b;
+  --terminal-ansi-bright-yellow: #8a6500;
+  --terminal-ansi-bright-blue: #3068ba;
+  --terminal-ansi-bright-magenta: #914cac;
+  --terminal-ansi-bright-cyan: #087887;
+  --terminal-ansi-bright-white: #37423d;
 }
 
 * {
@@ -877,23 +923,23 @@ svg {
 }
 
 .terminal-block {
-  --bg: #151616;
-  --text: #c8cecd;
-  --surface: #191a1a;
-  --border: rgba(255, 255, 255, 0.075);
-  --text-soft: #c8cbcc;
-  --muted: #8b9091;
-  --muted-dim: #626667;
+  --bg: var(--terminal-bg);
+  --text: var(--terminal-text);
+  --surface: var(--terminal-surface);
+  --border: var(--terminal-border);
+  --text-soft: var(--terminal-text-soft);
+  --muted: var(--terminal-muted);
+  --muted-dim: var(--terminal-muted-dim);
   overflow: visible;
   min-height: 100%;
   border: 0;
   border-radius: 0;
-  background: #151616;
+  background: var(--terminal-bg);
   box-shadow: none;
 }
 
 .terminal-session {
-  background: #151616;
+  background: var(--terminal-bg);
 }
 
 .terminal-block-header {
@@ -939,7 +985,7 @@ svg {
   margin: 0;
   padding: 19px 20px 24px;
   overflow-x: auto;
-  color: #c8cecd;
+  color: var(--terminal-text);
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 11.5px;
   line-height: 1.68;

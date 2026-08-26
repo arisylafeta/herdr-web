@@ -22,10 +22,26 @@ export interface AnsiSegment {
   muted: boolean;
 }
 
-// 16-color palette (VS Code integrated-terminal dark) — readable on our dark background.
+// Theme-aware 16-color palette. CSS resolves these variables at paint time, so already-rendered
+// output changes immediately when Herdr Web switches between light and dark mode. Extended 256-color
+// and truecolor sequences stay literal because those escapes request specific colors.
 const BASE16 = [
-  "#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
-  "#666666", "#f14c4c", "#23d18b", "#f5f543", "#3b8eea", "#d670d6", "#29b8db", "#ffffff",
+  "var(--terminal-ansi-black)",
+  "var(--terminal-ansi-red)",
+  "var(--terminal-ansi-green)",
+  "var(--terminal-ansi-yellow)",
+  "var(--terminal-ansi-blue)",
+  "var(--terminal-ansi-magenta)",
+  "var(--terminal-ansi-cyan)",
+  "var(--terminal-ansi-white)",
+  "var(--terminal-ansi-bright-black)",
+  "var(--terminal-ansi-bright-red)",
+  "var(--terminal-ansi-bright-green)",
+  "var(--terminal-ansi-bright-yellow)",
+  "var(--terminal-ansi-bright-blue)",
+  "var(--terminal-ansi-bright-magenta)",
+  "var(--terminal-ansi-bright-cyan)",
+  "var(--terminal-ansi-bright-white)",
 ];
 
 function color256(n: number): string {
