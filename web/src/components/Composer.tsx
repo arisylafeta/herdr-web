@@ -19,6 +19,7 @@ interface ComposerProps {
   tab: TabView | undefined;
   session: string | undefined;
   busy: boolean;
+  running: boolean;
   readOnly: boolean;
   onSend: (text: string) => Promise<boolean>;
   onStop: () => void;
@@ -35,7 +36,7 @@ export const specialKeys = [
   { label: "Enter", keys: ["Enter"] },
 ];
 
-export function Composer({ pane, tab, session, busy, readOnly, onSend, onStop, onSendKeys, onUpload }: ComposerProps) {
+export function Composer({ pane, tab, session, busy, running, readOnly, onSend, onStop, onSendKeys, onUpload }: ComposerProps) {
   const [value, setValue] = useState("");
   const [keysOpen, setKeysOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -43,7 +44,7 @@ export function Composer({ pane, tab, session, busy, readOnly, onSend, onStop, o
   const contextId = `${session ?? ""}\n${pane?.paneId ?? ""}`;
   const contextIdRef = useRef(contextId);
   contextIdRef.current = contextId;
-  const disabled = !pane || busy || readOnly;
+  const disabled = !pane || busy || running || readOnly;
 
   useEffect(() => {
     setValue("");
@@ -166,7 +167,7 @@ export function Composer({ pane, tab, session, busy, readOnly, onSend, onStop, o
                 </div>
               )}
             </div>
-            {busy ? (
+            {running ? (
               <button
                 className="send-button is-busy"
                 onClick={onStop}
@@ -174,6 +175,10 @@ export function Composer({ pane, tab, session, busy, readOnly, onSend, onStop, o
                 aria-label="Stop agent"
                 title="Stop agent"
               >
+                <Square />
+              </button>
+            ) : busy ? (
+              <button className="send-button is-busy" title="Action in progress" disabled>
                 <Square />
               </button>
             ) : (

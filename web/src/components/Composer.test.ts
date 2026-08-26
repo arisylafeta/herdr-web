@@ -9,14 +9,15 @@ describe("Composer special keys", () => {
     expect(specialKeys.find((key) => key.label === "Esc")?.keys).toEqual(["Esc"]);
   });
 
-  it("keeps the stop control enabled while the composer is busy", () => {
-    const pane = demoSnapshot.agents[0]!;
+  it("disables input and enables the stop control while the agent is running", () => {
+    const pane = { ...demoSnapshot.agents[0]!, status: "working" as const };
     const html = renderToStaticMarkup(
       createElement(Composer, {
         pane,
         tab: demoSnapshot.tabs.find((tab) => tab.tabId === pane.tabId),
         session: "default",
-        busy: true,
+        busy: false,
+        running: true,
         readOnly: false,
         onSend: vi.fn(() => Promise.resolve(true)),
         onStop: vi.fn(),
@@ -29,5 +30,26 @@ describe("Composer special keys", () => {
     expect(stopButton).toBeDefined();
     expect(stopButton).not.toContain("disabled");
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain('disabled=""');
+  });
+
+  it("does not expose Stop for an unrelated pending action", () => {
+    const pane = { ...demoSnapshot.agents[0]!, status: "idle" as const };
+    const html = renderToStaticMarkup(
+      createElement(Composer, {
+        pane,
+        tab: demoSnapshot.tabs.find((tab) => tab.tabId === pane.tabId),
+        session: "default",
+        busy: true,
+        running: false,
+        readOnly: false,
+        onSend: vi.fn(() => Promise.resolve(true)),
+        onStop: vi.fn(),
+        onSendKeys: vi.fn(),
+        onUpload: vi.fn(() => Promise.resolve(undefined)),
+      }),
+    );
+
+    expect(html).not.toContain('aria-label="Stop agent"');
+    expect(html).toContain('title="Action in progress" disabled=""');
   });
 });

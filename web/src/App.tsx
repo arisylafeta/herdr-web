@@ -169,6 +169,7 @@ export default function App() {
           tab={selectedTab}
           session={herdr.session}
           busy={herdr.actionBusy}
+          running={herdr.selectedPane?.status === "working"}
           readOnly={readOnly}
           onSend={herdr.send}
           onStop={() => void herdr.interrupt()}
