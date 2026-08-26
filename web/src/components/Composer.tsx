@@ -21,6 +21,7 @@ interface ComposerProps {
   busy: boolean;
   readOnly: boolean;
   onSend: (text: string) => Promise<boolean>;
+  onStop: () => void;
   onSendKeys: (keys: string[]) => void;
   onUpload: (file: File) => Promise<string | undefined>;
 }
@@ -34,7 +35,7 @@ export const specialKeys = [
   { label: "Enter", keys: ["Enter"] },
 ];
 
-export function Composer({ pane, tab, session, busy, readOnly, onSend, onSendKeys, onUpload }: ComposerProps) {
+export function Composer({ pane, tab, session, busy, readOnly, onSend, onStop, onSendKeys, onUpload }: ComposerProps) {
   const [value, setValue] = useState("");
   const [keysOpen, setKeysOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -166,7 +167,13 @@ export function Composer({ pane, tab, session, busy, readOnly, onSend, onSendKey
               )}
             </div>
             {busy ? (
-              <button className="send-button is-busy" title="Action in progress" disabled>
+              <button
+                className="send-button is-busy"
+                onClick={onStop}
+                disabled={!pane || readOnly}
+                aria-label="Stop agent"
+                title="Stop agent"
+              >
                 <Square />
               </button>
             ) : (

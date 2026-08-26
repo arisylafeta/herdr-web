@@ -171,6 +171,7 @@ export default function App() {
           busy={herdr.actionBusy}
           readOnly={readOnly}
           onSend={herdr.send}
+          onStop={() => void herdr.interrupt()}
           onSendKeys={(keys) => void herdr.sendKeys(keys)}
           onUpload={herdr.uploadImage}
         />

@@ -86,6 +86,7 @@ export function useHerdr() {
   const snapshotGenerationRef = useRef(0);
   const hasConnectedRef = useRef(false);
   const actionInFlightRef = useRef(false);
+  const interruptInFlightRef = useRef(false);
   const replyRequestsRef = useRef(new Map<string, { text: string; requestId: string }>());
   const tabCreateRequestRef = useRef<{ signature: string; requestId: string } | null>(null);
   const workspaceCreateRequestRef = useRef<{ signature: string; requestId: string } | null>(null);
@@ -354,6 +355,32 @@ export function useHerdr() {
     [mode, pushNotice, runAction, selectedPaneId, session],
   );
 
+  const interrupt = useCallback(async () => {
+    const paneId = selectedPaneId;
+    if (!paneId || interruptInFlightRef.current) return;
+    if (mode === "demo") {
+      setSnapshot((current) => ({
+        ...current,
+        agents: current.agents.map((agent) =>
+          agent.paneId === paneId ? { ...agent, status: "idle" } : agent,
+        ),
+      }));
+      pushNotice("info", "Sent Esc to stop the demo agent.");
+      return;
+    }
+
+    interruptInFlightRef.current = true;
+    try {
+      const result = await sendKeysRequest(paneId, ["Esc"], session);
+      if (!result.ok) pushNotice("error", result.error);
+      else pushNotice("info", "Sent Esc to stop the agent.");
+    } catch (error) {
+      pushNotice("error", error instanceof Error ? error.message : "Stop signal failed");
+    } finally {
+      interruptInFlightRef.current = false;
+    }
+  }, [mode, pushNotice, selectedPaneId, session]);
+
   const createTab = useCallback(
     async (workspaceId: string, label: string) => {
       if (mode === "demo") {
@@ -575,6 +602,7 @@ export function useHerdr() {
     selectPane,
     setSession,
     send,
+    interrupt,
     sendKeys,
     createTab,
     createWorkspace,
