@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseAnsi } from "./ansi";
 
 describe("parseAnsi", () => {
-  it("maps the base ANSI palette to live terminal theme variables", () => {
+  it("maps the base ANSI palette to terminal-scoped CSS variables", () => {
     const segments = parseAnsi(
       "\u001b[31mred\u001b[44mblue background\u001b[97mbright white",
     );
@@ -32,7 +32,7 @@ describe("parseAnsi", () => {
     expect(segments[1]?.fg).toBe("rgb(12,34,56)");
   });
 
-  it("uses the app theme variables for inverse video without explicit colors", () => {
+  it("uses the terminal palette variables for inverse video without explicit colors", () => {
     expect(parseAnsi("\u001b[7mselected\u001b[27m")[0]).toMatchObject({
       text: "selected",
       fg: "var(--bg)",

@@ -98,29 +98,6 @@ html[data-theme="light"] {
   --toast-bg: #ffffff;
   --toggle-bg: #d8ddda;
   --toggle-knob: #ffffff;
-  --terminal-bg: #fbfcfa;
-  --terminal-surface: #f0f2ef;
-  --terminal-border: rgba(27, 35, 31, 0.12);
-  --terminal-text: #26312c;
-  --terminal-text-soft: #39443f;
-  --terminal-muted: #5f6b65;
-  --terminal-muted-dim: #626e68;
-  --terminal-ansi-black: #1f2522;
-  --terminal-ansi-red: #ae3039;
-  --terminal-ansi-green: #087447;
-  --terminal-ansi-yellow: #806000;
-  --terminal-ansi-blue: #285fb0;
-  --terminal-ansi-magenta: #8543a0;
-  --terminal-ansi-cyan: #0b6f7c;
-  --terminal-ansi-white: #606b65;
-  --terminal-ansi-bright-black: #4f5a54;
-  --terminal-ansi-bright-red: #ba3741;
-  --terminal-ansi-bright-green: #087b4b;
-  --terminal-ansi-bright-yellow: #8a6500;
-  --terminal-ansi-bright-blue: #3068ba;
-  --terminal-ansi-bright-magenta: #914cac;
-  --terminal-ansi-bright-cyan: #087887;
-  --terminal-ansi-bright-white: #37423d;
 }
 
 * {
@@ -939,6 +916,7 @@ svg {
 }
 
 .terminal-session {
+  color-scheme: dark;
   background: var(--terminal-bg);
 }
 
@@ -1841,13 +1819,13 @@ html[data-theme="light"] .connection-banner {
 html[data-theme="light"] .terminal-session .connection-banner {
   border-bottom-color: rgba(238, 92, 98, 0.2);
   background: rgba(238, 92, 98, 0.1);
-  color: #9f3038;
+  color: #ef9ca0;
 }
 
 html[data-theme="light"] .terminal-session .demo-banner {
   border-bottom-color: rgba(223, 170, 82, 0.2);
   background: rgba(223, 170, 82, 0.1);
-  color: #805613;
+  color: #e3bd7e;
 }
 
 html[data-theme="light"] .demo-banner,

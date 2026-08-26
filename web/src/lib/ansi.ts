@@ -22,9 +22,9 @@ export interface AnsiSegment {
   muted: boolean;
 }
 
-// Theme-aware 16-color palette. CSS resolves these variables at paint time, so already-rendered
-// output changes immediately when Herdr Web switches between light and dark mode. Extended 256-color
-// and truecolor sequences stay literal because those escapes request specific colors.
+// Stable 16-color terminal palette. The surrounding app can switch themes without changing the
+// terminal canvas that interactive programs such as Codex rendered against. Extended 256-color and
+// truecolor sequences stay literal because those escapes request specific colors.
 const BASE16 = [
   "var(--terminal-ansi-black)",
   "var(--terminal-ansi-red)",
