@@ -3,23 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#111212" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f7f8f6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111212" />
     <meta name="color-scheme" content="dark light" />
     <meta name="description" content="A T3 Code-style control plane for durable Herdr agent sessions" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <script>
-      try {
-        const saved = localStorage.getItem("herdr-web:theme");
-        const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.dataset.theme = saved === "light" || saved === "dark"
-          ? saved
-          : systemDark ? "dark" : "light";
-      } catch {
-        document.documentElement.dataset.theme = "dark";
-      }
-    </script>
+    <script src="/theme-bootstrap.js"></script>
     <title>Herdr Web</title>
   </head>
   <body>

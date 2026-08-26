@@ -51,8 +51,8 @@ html[data-theme="light"] {
   --border-strong: rgba(27, 35, 31, 0.17);
   --text: #17201c;
   --text-soft: #39443f;
-  --muted: #66716c;
-  --muted-dim: #89928e;
+  --muted: #5f6b65;
+  --muted-dim: #65706a;
   --accent: #3f5fe0;
   --accent-hover: #304fce;
   --red: #c23f47;
@@ -1920,6 +1920,18 @@ html[data-theme="light"] .command-search kbd {
 html[data-theme="light"] .badge-blocked,
 html[data-theme="light"] .sidebar-status-blocked {
   color: #9f3038;
+}
+
+html[data-theme="light"] .button-danger {
+  border-color: rgba(150, 52, 59, 0.3);
+  background: rgba(150, 52, 59, 0.09);
+  color: #96343b;
+}
+
+html[data-theme="light"] .sidebar-status-unknown {
+  border-color: rgba(145, 80, 0, 0.28);
+  background: rgba(145, 80, 0, 0.08);
+  color: #805000;
 }
 
 html[data-theme="light"] .badge-working {

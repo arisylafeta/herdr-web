@@ -28,7 +28,12 @@ export function useTheme(): {
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      document.documentElement.dataset.theme = resolveTheme(preference, query.matches);
+      const theme = resolveTheme(preference, query.matches);
+      document.documentElement.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute(
+        "content",
+        theme === "dark" ? "#111212" : "#f7f8f6",
+      );
     };
     apply();
     query.addEventListener("change", apply);
