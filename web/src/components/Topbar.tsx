@@ -61,17 +61,19 @@ export function Topbar({
       </div>
 
       <div className="topbar-actions">
-        <label className="session-select" title="Switch Herdr session">
-          <Server />
-          <select value={session ?? ""} onChange={(event) => onSessionChange(event.target.value || undefined)}>
-            {sessions.map((item) => (
-              <option key={item.name} value={item.isPrimary ? "" : item.name} disabled={!item.reachable}>
-                {item.name}{item.blocked ? ` · ${item.blocked} blocked` : ""}
-              </option>
-            ))}
-          </select>
-          <ChevronDown />
-        </label>
+        {sessions.length > 1 && (
+          <label className="session-select" title="Switch Herdr session">
+            <Server />
+            <select value={session ?? ""} onChange={(event) => onSessionChange(event.target.value || undefined)}>
+              {sessions.map((item) => (
+                <option key={item.name} value={item.isPrimary ? "" : item.name} disabled={!item.reachable}>
+                  {item.name}{item.blocked ? ` · ${item.blocked} blocked` : ""}
+                </option>
+              ))}
+            </select>
+            <ChevronDown />
+          </label>
+        )}
 
         <button
           className="topbar-button"
