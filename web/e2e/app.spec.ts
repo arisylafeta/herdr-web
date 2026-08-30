@@ -68,48 +68,48 @@ test("mobile layout exposes the complete primary workflow", async ({ page }) => 
   await page.screenshot({ path: "artifacts/herdr-web-mobile.png", fullPage: true });
 });
 
-test("one PWA receives sessions from a persisted machine bridge", async ({ page }) => {
-  const desktop = structuredClone(demoSnapshot);
-  desktop.workspaces = desktop.workspaces.map((workspace) => ({
+test("one PWA switches to a persisted device bridge", async ({ page }) => {
+  const crm = structuredClone(demoSnapshot);
+  crm.workspaces = crm.workspaces.map((workspace) => ({
     ...workspace,
-    label: `desktop-${workspace.label}`,
+    label: `crm-${workspace.label}`,
   }));
-  desktop.agents = desktop.agents.map((pane) => ({
+  crm.agents = crm.agents.map((pane) => ({
     ...pane,
-    workspaceLabel: `desktop-${pane.workspaceLabel}`,
+    workspaceLabel: `crm-${pane.workspaceLabel}`,
   }));
-  desktop.shellPanes = desktop.shellPanes.map((pane) => ({
+  crm.shellPanes = crm.shellPanes.map((pane) => ({
     ...pane,
-    workspaceLabel: `desktop-${pane.workspaceLabel}`,
+    workspaceLabel: `crm-${pane.workspaceLabel}`,
   }));
   await page.addInitScript(() => {
     localStorage.setItem(
       "herdr-web:bridges:v1",
       JSON.stringify([
-        { id: "desktop", label: "Desktop", baseUrl: "https://desktop.example" },
+        { id: "crm", label: "crm", baseUrl: "https://crm.example" },
       ]),
     );
   });
   const receiverRequests: string[] = [];
-  await page.route("https://desktop.example/**", async (route) => {
+  await page.route("https://crm.example/**", async (route) => {
     receiverRequests.push(route.request().url());
     const pathname = new URL(route.request().url()).pathname;
-    if (pathname === "/api/snapshot") return route.fulfill({ json: desktop });
+    if (pathname === "/api/snapshot") return route.fulfill({ json: crm });
     if (pathname.startsWith("/api/pane/")) {
       const paneId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
       return route.fulfill({
-        json: { paneId, text: "desktop receiver output", truncated: false, revision: 1 },
+        json: { paneId, text: "crm receiver output", truncated: false, revision: 1 },
       });
     }
     return route.fulfill({ status: 404, body: "not found" });
   });
 
-  await page.goto("/?bridge=desktop");
-  await expect(page.getByTitle("Switch Herdr machine").locator("select")).toHaveValue("desktop");
-  await expect(page.getByText("desktop-t3-herdr", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("desktop receiver output", { exact: true })).toBeVisible();
+  await page.goto("/?bridge=crm");
+  await expect(page.getByTitle("Switch Herdr device").locator("select")).toHaveValue("crm");
+  await expect(page.getByText("crm-t3-herdr", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("crm receiver output", { exact: true })).toBeVisible();
   expect(receiverRequests.length).toBeGreaterThanOrEqual(2);
-  expect(receiverRequests.every((url) => url.startsWith("https://desktop.example/api/"))).toBe(true);
+  expect(receiverRequests.every((url) => url.startsWith("https://crm.example/api/"))).toBe(true);
 });
 
 test("live bridge snapshot renders without falling back to demo data", async ({ page, request }) => {
@@ -241,24 +241,22 @@ test("pane switches clear terminal output and composer drafts", async ({ page })
   await expect(page.getByText("pane two output", { exact: true })).toBeVisible();
 });
 
-test("async attachments cannot cross sessions that reuse a pane ID", async ({ page }) => {
+test("async attachments cannot cross devices that reuse a pane ID", async ({ page }) => {
   const defaultSession = structuredClone(demoSnapshot);
-  const buildbox = structuredClone(demoSnapshot);
-  const sessions = [
-    ...defaultSession.sessions!,
-    { name: "buildbox", isPrimary: false, reachable: true, agents: 1, working: 1, blocked: 0 },
-  ];
-  defaultSession.sessions = sessions;
-  buildbox.sessions = sessions;
-  buildbox.workspaces = [{ ...buildbox.workspaces[0]!, label: "buildbox" }];
-  buildbox.tabs = [buildbox.tabs[0]!];
-  buildbox.agents = [{ ...buildbox.agents[0]!, workspaceLabel: "buildbox" }];
-  buildbox.shellPanes = [];
+  const crm = structuredClone(demoSnapshot);
+  crm.workspaces = [{ ...crm.workspaces[0]!, label: "crm" }];
+  crm.tabs = [crm.tabs[0]!];
+  crm.agents = [{ ...crm.agents[0]!, workspaceLabel: "crm" }];
+  crm.shellPanes = [];
 
-  await page.route("**/api/snapshot*", (route) => {
-    const session = new URL(route.request().url()).searchParams.get("session");
-    return route.fulfill({ json: session === "buildbox" ? buildbox : defaultSession });
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "herdr-web:bridges:v1",
+      JSON.stringify([{ id: "crm", label: "crm", baseUrl: "https://crm.example" }]),
+    );
   });
+
+  await page.route("**/api/snapshot*", (route) => route.fulfill({ json: defaultSession }));
   await page.route("**/api/pane/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith("/upload")) {
@@ -269,6 +267,15 @@ test("async attachments cannot cross sessions that reuse a pane ID", async ({ pa
     const paneId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
     await route.fulfill({ json: { paneId, text: "output", truncated: false, revision: 1 } });
   });
+  await page.route("https://crm.example/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/snapshot") return route.fulfill({ json: crm });
+    if (pathname.startsWith("/api/pane/")) {
+      const paneId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
+      return route.fulfill({ json: { paneId, text: "crm output", truncated: false, revision: 1 } });
+    }
+    return route.fulfill({ status: 404, body: "not found" });
+  });
 
   await page.goto("/");
   await page.locator('input[type="file"]').setInputFiles({
@@ -276,38 +283,33 @@ test("async attachments cannot cross sessions that reuse a pane ID", async ({ pa
     mimeType: "image/png",
     buffer: Buffer.from("image"),
   });
-  await page.getByTitle("Switch Herdr session").locator("select").selectOption("buildbox");
-  await expect(page.getByText("buildbox", { exact: true }).first()).toBeVisible();
+  await page.getByTitle("Switch Herdr device").locator("select").selectOption("crm");
+  await expect(page.getByText("crm", { exact: true }).first()).toBeVisible();
   await page.waitForTimeout(450);
   await expect(page.getByText("from-default-session.png", { exact: true })).toHaveCount(0);
 });
 
-test("session switching ignores an older snapshot that resolves late", async ({ page }) => {
+test("device switching ignores an older snapshot that resolves late", async ({ page }) => {
   let defaultRequests = 0;
   const defaultSession = structuredClone(demoSnapshot);
-  const buildbox = structuredClone(demoSnapshot);
-  const sessions = [
-    ...defaultSession.sessions!,
-    { name: "buildbox", isPrimary: false, reachable: true, agents: 1, working: 1, blocked: 0 },
+  const crm = structuredClone(demoSnapshot);
+  crm.workspaces = [
+    { workspaceId: "cw1", number: 1, label: "crm-only", focused: true, activeTabId: "cw1:t1", tabCount: 1, paneCount: 1 },
   ];
-  defaultSession.sessions = sessions;
-  buildbox.sessions = sessions;
-  buildbox.workspaces = [
-    { workspaceId: "bw1", number: 1, label: "buildbox-only", focused: true, activeTabId: "bw1:t1", tabCount: 1, paneCount: 1 },
+  crm.tabs = [{ tabId: "cw1:t1", workspaceId: "cw1", number: 1, label: "remote", focused: true, paneCount: 1 }];
+  crm.agents = [
+    { paneId: "cw1:p1", workspaceId: "cw1", workspaceLabel: "crm-only", workspaceNumber: 1, tabId: "cw1:t1", agent: "codex", status: "working", cwd: "/remote/crm", focused: true },
   ];
-  buildbox.tabs = [{ tabId: "bw1:t1", workspaceId: "bw1", number: 1, label: "remote", focused: true, paneCount: 1 }];
-  buildbox.agents = [
-    { paneId: "bw1:p1", workspaceId: "bw1", workspaceLabel: "buildbox-only", workspaceNumber: 1, tabId: "bw1:t1", agent: "codex", status: "working", cwd: "/remote/buildbox", focused: true },
-  ];
-  buildbox.shellPanes = [];
+  crm.shellPanes = [];
+
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "herdr-web:bridges:v1",
+      JSON.stringify([{ id: "crm", label: "crm", baseUrl: "https://crm.example" }]),
+    );
+  });
 
   await page.route("**/api/snapshot*", async (route) => {
-    const session = new URL(route.request().url()).searchParams.get("session");
-    if (session === "buildbox") {
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      await route.fulfill({ json: buildbox });
-      return;
-    }
     defaultRequests++;
     if (defaultRequests > 1) await new Promise((resolve) => setTimeout(resolve, 450));
     await route.fulfill({ json: defaultSession });
@@ -315,14 +317,26 @@ test("session switching ignores an older snapshot that resolves late", async ({ 
   await page.route("**/api/pane/**", (route) =>
     route.fulfill({ json: demoPaneById["w1:p1"] }),
   );
+  await page.route("https://crm.example/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/snapshot") {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return route.fulfill({ json: crm });
+    }
+    if (pathname.startsWith("/api/pane/")) {
+      const paneId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
+      return route.fulfill({ json: { paneId, text: "crm output", truncated: false, revision: 1 } });
+    }
+    return route.fulfill({ status: 404, body: "not found" });
+  });
 
   await page.goto("/");
   await expect(page.getByText("t3-herdr", { exact: true }).first()).toBeVisible();
-  await page.getByTitle("Refresh session").click();
-  await page.getByTitle("Switch Herdr session").locator("select").selectOption("buildbox");
-  await expect(page.getByText("buildbox-only", { exact: true }).first()).toBeVisible();
+  await page.getByTitle("Refresh device").click();
+  await page.getByTitle("Switch Herdr device").locator("select").selectOption("crm");
+  await expect(page.getByText("crm-only", { exact: true }).first()).toBeVisible();
   await page.waitForTimeout(550);
-  await expect(page.getByText("buildbox-only", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("crm-only", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("t3-herdr", { exact: true })).toHaveCount(0);
 });
 

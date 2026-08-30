@@ -16,7 +16,7 @@ describe("bridge profiles", () => {
     expect(profiles).toEqual([
       {
         id: "default",
-        label: "laptop.example",
+        label: "home",
         baseUrl: "https://laptop.example:8787",
         builtIn: true,
       },

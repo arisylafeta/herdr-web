@@ -6,11 +6,10 @@ import {
   PanelRight,
   Plus,
   RefreshCw,
-  Server,
   SquareTerminal,
   X,
 } from "lucide-react";
-import type { AgentView, SessionSummary, TabView } from "../lib/types";
+import type { AgentView, TabView } from "../lib/types";
 import type { BridgeProfile } from "../lib/receiver";
 import { STATUS_LABEL } from "../lib/types";
 import { StatusDot } from "./StatusDot";
@@ -18,13 +17,10 @@ import { StatusDot } from "./StatusDot";
 interface TopbarProps {
   pane: AgentView | null;
   tab: TabView | undefined;
-  sessions: SessionSummary[];
-  session: string | undefined;
   bridges: BridgeProfile[];
   bridgeId: string;
   bridgeConnected: boolean;
   readOnly: boolean;
-  onSessionChange: (session: string | undefined) => void;
   onBridgeChange: (bridgeId: string) => void;
   onOpenSidebar: () => void;
   onNewTab: () => void;
@@ -35,13 +31,10 @@ interface TopbarProps {
 export function Topbar({
   pane,
   tab,
-  sessions,
-  session,
   bridges,
   bridgeId,
   bridgeConnected,
   readOnly,
-  onSessionChange,
   onBridgeChange,
   onOpenSidebar,
   onNewTab,
@@ -70,25 +63,11 @@ export function Topbar({
 
       <div className="topbar-actions">
         {bridges.length > 1 && (
-          <label className="session-select bridge-select" title="Switch Herdr machine">
+          <label className="device-select" title="Switch Herdr device">
             <Network />
             <select value={bridgeId} onChange={(event) => onBridgeChange(event.target.value)}>
               {bridges.map((bridge) => (
                 <option key={bridge.id} value={bridge.id}>{bridge.label}</option>
-              ))}
-            </select>
-            <ChevronDown />
-          </label>
-        )}
-
-        {sessions.length > 1 && (
-          <label className="session-select" title="Switch Herdr session">
-            <Server />
-            <select value={session ?? ""} onChange={(event) => onSessionChange(event.target.value || undefined)}>
-              {sessions.map((item) => (
-                <option key={item.name} value={item.isPrimary ? "" : item.name} disabled={!item.reachable}>
-                  {item.name}{item.blocked ? ` · ${item.blocked} blocked` : ""}
-                </option>
               ))}
             </select>
             <ChevronDown />
@@ -105,7 +84,7 @@ export function Topbar({
           <span>New pane</span>
         </button>
 
-        <button className="icon-button" onClick={onRefresh} title="Refresh session">
+        <button className="icon-button" onClick={onRefresh} title="Refresh device">
           <RefreshCw />
         </button>
         <button className="icon-button desktop-only" title="Open terminal controls">

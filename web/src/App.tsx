@@ -36,18 +36,6 @@ export default function App() {
   } | null>(null);
 
   const selectedTab = herdr.snapshot.tabs.find((tab) => tab.tabId === herdr.selectedPane?.tabId);
-  const sessions = herdr.snapshot.sessions?.length
-    ? herdr.snapshot.sessions
-    : [
-        {
-          name: "default",
-          isPrimary: true,
-          reachable: herdr.snapshot.bridge === "connected",
-          agents: herdr.snapshot.agents.length,
-          working: herdr.snapshot.agents.filter((agent) => agent.status === "working").length,
-          blocked: herdr.snapshot.agents.filter((agent) => agent.status === "blocked").length,
-        },
-      ];
   const newTabWorkspace = herdr.snapshot.workspaces.find(
     (workspace) => workspace.workspaceId === newTabWorkspaceId,
   );
@@ -124,13 +112,10 @@ export default function App() {
         <Topbar
           pane={herdr.selectedPane}
           tab={selectedTab}
-          sessions={sessions}
-          session={herdr.session}
           bridges={bridges.profiles}
           bridgeId={bridges.activeId}
           bridgeConnected={herdr.snapshot.bridge === "connected"}
           readOnly={readOnly}
-          onSessionChange={herdr.setSession}
           onBridgeChange={bridges.select}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
           onNewTab={() => openNewTab(herdr.selectedPane?.workspaceId)}

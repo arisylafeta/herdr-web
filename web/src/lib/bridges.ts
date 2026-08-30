@@ -21,10 +21,9 @@ export function defaultBridgeProfile(options: DefaultBridgeOptions = {}): Bridge
   const configuredUrl = options.bridgeUrl ?? import.meta.env.VITE_HERDR_BRIDGE_URL;
   const configuredLabel = options.label ?? import.meta.env.VITE_HERDR_BRIDGE_LABEL;
   const baseUrl = normalizeBridgeUrl(configuredUrl?.trim() || pwaOrigin);
-  const hostname = new URL(baseUrl).hostname;
   return {
     id: DEFAULT_BRIDGE_ID,
-    label: configuredLabel?.trim() || hostname || "Default bridge",
+    label: configuredLabel?.trim() || "home",
     baseUrl,
     builtIn: true,
   };

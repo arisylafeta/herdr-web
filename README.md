@@ -16,7 +16,7 @@ for compatibility with existing installations and configuration directories.
   [Herdr Mobile](https://github.com/benkraus/herdr-mobile) application.
 - Live terminal frames with device-sized terminal control.
 - Workspace, worktree, tab, pane, and multi-session navigation.
-- Persisted machine receivers, so one installed PWA can switch between host-local bridges.
+- Persisted device receivers, so one installed PWA can switch between host-local bridges.
 - Bounded workspace file previews and read-only Git status/diff inspection.
 - Authorized terminal input and structural mutations.
 - Optional Web Push notifications for agent state changes.
@@ -224,22 +224,22 @@ COLLIE_ALLOWED_ORIGINS=https://herdr.example.com
 The proxy must strip and inject the configured trusted-user header and must preserve public request
 provenance using standard forwarded headers. Never accept a client-supplied identity header directly.
 
-### Multiple machines in one PWA
+### Multiple devices in one PWA
 
-Keep one bridge beside Herdr on every machine. Install/open the PWA from one stable HTTPS bridge,
-then allow that PWA origin on every additional machine:
+Keep one bridge beside Herdr on every device. Install/open the PWA from one stable HTTPS bridge,
+then allow that PWA origin on every additional device:
 
 ```dotenv
-# On the additional machine
+# On the additional device
 COLLIE_ALLOWED_ORIGINS=https://pwa-host.your-tailnet.ts.net:8787
 ```
 
-Restart the additional bridge, open **Settings → Machines** in the installed PWA, and add that
-machine's Tailscale Serve URL. The machine picker scopes all snapshots, pane reads, and mutations;
-the existing session picker remains scoped to the selected machine. The additional bridge still
+Restart the additional bridge, open **Settings → Devices** in the installed PWA, and add that
+device's Tailscale Serve URL. The device picker scopes all snapshots, pane reads, and mutations.
+The additional bridge still
 requires its own `COLLIE_PUBLIC_HOSTS`/Serve mapping and matching `COLLIE_TRUSTED_USER` identity.
 
-Cross-machine receivers require HTTPS. Push registration remains owned by the PWA's built-in default
+Cross-device receivers require HTTPS. Push registration remains owned by the PWA's built-in default
 bridge; receiver federation currently covers interactive access to additional bridges, not their push
 deep links.
 

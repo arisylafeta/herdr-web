@@ -343,16 +343,12 @@ export function SettingsModal({
           <span>Remote access</span>
           <strong>tailscale serve</strong>
         </div>
-        <div>
-          <span>Session discovery</span>
-          <strong>All named Herdr sessions</strong>
-        </div>
         <div className="settings-bridges">
           <span className="settings-notification-copy">
             <Network />
             <span>
-              <strong>Machines</strong>
-              <small>Each URL receives sessions from one host-local bridge</small>
+              <strong>Devices</strong>
+              <small>One bridge URL per device</small>
             </span>
           </span>
           <div className="bridge-profile-list">
@@ -392,13 +388,13 @@ export function SettingsModal({
             <input
               value={bridgeLabel}
               onChange={(event) => setBridgeLabel(event.target.value)}
-              placeholder="Machine name"
-              aria-label="Machine name"
+              placeholder="Device name (home, crm)"
+              aria-label="Device name"
             />
             <input
               value={bridgeUrl}
               onChange={(event) => setBridgeUrl(event.target.value)}
-              placeholder="https://machine.tailnet.ts.net:8787"
+              placeholder="https://device.tailnet.ts.net:8787"
               aria-label="Bridge URL"
               required
             />

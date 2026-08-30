@@ -688,7 +688,7 @@ svg {
   border-radius: 7px;
 }
 
-.session-select,
+.device-select,
 .topbar-button {
   display: inline-flex;
   height: 32px;
@@ -701,25 +701,28 @@ svg {
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
 }
 
-.session-select {
+.device-select {
   position: relative;
-  padding: 0 8px;
+  max-width: 104px;
+  gap: 5px;
+  padding: 0 6px;
 }
 
-.session-select > svg:first-child {
+.device-select > svg:first-child {
   width: 15px;
   height: 15px;
   color: var(--muted);
 }
 
-.session-select > svg:last-child {
+.device-select > svg:last-child {
   width: 13px;
   height: 13px;
   color: var(--muted-dim);
 }
 
-.session-select select {
-  max-width: 128px;
+.device-select select {
+  min-width: 0;
+  max-width: 64px;
   appearance: none;
   border: 0;
   outline: 0;
@@ -737,7 +740,7 @@ svg {
 }
 
 .topbar-button:hover,
-.session-select:hover {
+.device-select:hover {
   border-color: var(--border-strong);
   background: var(--surface-hover);
 }
@@ -1935,7 +1938,7 @@ html[data-theme="light"] .update-banner:not(.update-banner-restart) {
 }
 
 html[data-theme="light"] .brand-mark,
-html[data-theme="light"] .session-select,
+html[data-theme="light"] .device-select,
 html[data-theme="light"] .topbar-button,
 html[data-theme="light"] .composer-card,
 html[data-theme="light"] .send-button,
@@ -2051,17 +2054,17 @@ html[data-theme="light"] .modal-layer {
   }
 
   .topbar-button,
-  .session-select > svg:first-child,
+  .device-select > svg:first-child,
   .connection-indicator {
     display: none;
   }
 
-  .session-select {
-    width: 110px;
+  .device-select {
+    width: 82px;
     min-width: 0;
   }
 
-  .session-select select {
+  .device-select select {
     min-width: 0;
     max-width: 74px;
     font-size: 10.5px;
@@ -2100,19 +2103,19 @@ html[data-theme="light"] .modal-layer {
 
   .topbar-title > span,
   .topbar-actions > .icon-button,
-  .session-select > svg:last-child {
+  .device-select > svg:last-child {
     display: none;
   }
 
-  .session-select {
-    width: 88px;
+  .device-select {
+    width: 64px;
     justify-content: center;
     padding: 0 6px;
   }
 
-  .session-select select {
-    width: 72px;
-    max-width: 72px;
+  .device-select select {
+    width: 52px;
+    max-width: 52px;
     text-overflow: ellipsis;
   }
 
