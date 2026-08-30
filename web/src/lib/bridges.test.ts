@@ -10,15 +10,27 @@ import {
 describe("bridge profiles", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("defaults to the PWA origin for the combined deployment", () => {
-    const configured = defaultBridgeProfile({ pwaOrigin: "https://laptop.example:8787" });
-    const profiles = loadBridgeProfiles(configured, { getItem: () => null });
+  it("uses short hostnames for built-in and saved device labels", () => {
+    const configured = defaultBridgeProfile({ pwaOrigin: "https://crm.example.ts.net:8787" });
+    const stored = JSON.stringify([
+      {
+        id: "home",
+        label: "home.example.ts.net",
+        baseUrl: "https://home.example.ts.net:8787",
+      },
+    ]);
+    const profiles = loadBridgeProfiles(configured, { getItem: () => stored });
     expect(profiles).toEqual([
       {
         id: "default",
-        label: "home",
-        baseUrl: "https://laptop.example:8787",
+        label: "crm",
+        baseUrl: "https://crm.example.ts.net:8787",
         builtIn: true,
+      },
+      {
+        id: "home",
+        label: "home",
+        baseUrl: "https://home.example.ts.net:8787",
       },
     ]);
   });

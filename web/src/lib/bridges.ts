@@ -16,6 +16,13 @@ export interface DefaultBridgeOptions {
   label?: string;
 }
 
+function deviceLabel(baseUrl: string, label?: string): string {
+  const hostname = new URL(baseUrl).hostname;
+  const configured = label?.trim();
+  if (configured && configured !== hostname) return configured;
+  return hostname.split(".")[0] || "device";
+}
+
 export function defaultBridgeProfile(options: DefaultBridgeOptions = {}): BridgeProfile {
   const pwaOrigin = options.pwaOrigin ?? window.location.origin;
   const configuredUrl = options.bridgeUrl ?? import.meta.env.VITE_HERDR_BRIDGE_URL;
@@ -23,7 +30,7 @@ export function defaultBridgeProfile(options: DefaultBridgeOptions = {}): Bridge
   const baseUrl = normalizeBridgeUrl(configuredUrl?.trim() || pwaOrigin);
   return {
     id: DEFAULT_BRIDGE_ID,
-    label: configuredLabel?.trim() || "home",
+    label: deviceLabel(baseUrl, configuredLabel),
     baseUrl,
     builtIn: true,
   };
@@ -36,10 +43,9 @@ export function createBridgeProfile(
 ): BridgeProfile {
   if (!id || id === DEFAULT_BRIDGE_ID) throw new Error("Invalid bridge identity");
   const normalized = normalizeBridgeUrl(baseUrl);
-  const trimmedLabel = label.trim();
   return {
     id,
-    label: trimmedLabel || new URL(normalized).hostname,
+    label: deviceLabel(normalized, label),
     baseUrl: normalized,
   };
 }
