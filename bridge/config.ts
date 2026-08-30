@@ -153,6 +153,8 @@ export interface Config {
   vapidSubject: string;
   /** Where to persist push subscriptions and other runtime state. */
   stateDir: string;
+  /** Serve the bundled PWA from this bridge. Off makes this an API-only bridge. */
+  servePwa: boolean;
   /**
    * Multi-session support. When on (default), the bridge fronts every running herdr session it
    * discovers under the config root, not just {@link socketPath}, and the UI gains a session
@@ -204,6 +206,7 @@ export function loadConfig(): Config {
     vapidPrivate: process.env.COLLIE_VAPID_PRIVATE ?? "",
     vapidSubject: process.env.COLLIE_VAPID_SUBJECT ?? "mailto:admin@example.com",
     stateDir,
+    servePwa: envBool("COLLIE_SERVE_PWA", true),
     multiSession: envBool("COLLIE_MULTI_SESSION", true),
   };
 }

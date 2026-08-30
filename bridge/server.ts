@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { extname, join, normalize, sep } from "node:path";
+import { join } from "node:path";
 import type { AuditLog } from "./audit.ts";
 import { isLoopbackBindHost, MAX_READ_LINES, type Config } from "./config.ts";
 import { HerdrRequestError, type HerdrClient, type PaneRead } from "./herdr-client.ts";
@@ -7,6 +7,7 @@ import { computeEtag, gzipJsonResponse, notModified } from "./http-cache.ts";
 import type { LiveUpdateHub } from "./live-updates.ts";
 import type { NotifyPrefs, NotifyPrefsStore } from "./notify-prefs.ts";
 import { ensurePrivateDirectory, writePrivateFile } from "./private-fs.ts";
+import type { PwaAssets } from "./pwa-assets.ts";
 import { isTrustedPushSubscription, type Push, type PushSubscriptionOwner } from "./push.ts";
 import type { SessionRegistry } from "./sessions.ts";
 import type { Snooze } from "./snooze.ts";
@@ -50,30 +51,6 @@ const IMAGE_EXT: Record<string, string> = {
   "image/webp": "webp",
   "image/gif": "gif",
 };
-
-// The built PWA lives in web/dist (Vite output). If it's missing, the bridge still runs the API
-// — only the static UI 503s with a hint to build.
-const WEB_DIR = join(import.meta.dir, "..", "web", "dist");
-
-const CONTENT_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".webmanifest": "application/manifest+json; charset=utf-8",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-};
-
-// Strict CSP. Scripts are external, hashed bundles (script-src 'self'); pane text is rendered by
-// React as text nodes, never markup, so terminal output can't inject. 'unsafe-inline' is allowed
-// for styles only (the toast library injects a <style> tag) — it can't execute code.
-const CSP =
-  "default-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-  "style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; worker-src 'self'; " +
-  "manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'";
 
 // Hardening headers set on EVERY response (static + API), applied centrally in the fetch wrapper.
 // nosniff stops content-type confusion; no-referrer keeps the tailnet URL out of any Referer.
@@ -315,8 +292,10 @@ export function startServer(opts: {
   updateMonitor: UpdateMonitor;
   audit: AuditLog;
   liveUpdates: LiveUpdateHub;
+  /** Optional adapter for the combined deployment. Omit it for an API-only bridge. */
+  pwa?: PwaAssets;
 }) {
-  const { cfg, registry, push, snooze, notifyPrefs, updateMonitor, audit, liveUpdates } = opts;
+  const { cfg, registry, push, snooze, notifyPrefs, updateMonitor, audit, liveUpdates, pwa } = opts;
   const replyDeduplicator = new ReplyDeduplicator();
   const createDeduplicator = new CreateDeduplicator();
   const worktreeCreateDeduplicator = new WorktreeCreateDeduplicator();
@@ -346,8 +325,13 @@ export function startServer(opts: {
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
     async fetch(req, bunServer) {
-      const url = new URL(req.url);
-      const { pathname } = url;
+      const response = await (async () => {
+        const url = new URL(req.url);
+        const { pathname } = url;
+
+        if (req.method === "OPTIONS" && (pathname === "/api" || pathname.startsWith("/api/"))) {
+          return corsPreflight(req, cfg);
+        }
 
       // Session-scoped routes accept an optional `?session=<name>`; absent → the primary session
       // (identical to pre-multi-session behaviour). The name is only ever a registry Map lookup — it
@@ -691,7 +675,7 @@ export function startServer(opts: {
           {
             push: push.enabled,
             vapidPublicKey: push.publicKey,
-            build: await buildId(),
+            build: pwa ? await pwa.buildId() : "external",
           } satisfies BridgeConfig,
           req.headers.get("accept-encoding"),
         );
@@ -850,8 +834,10 @@ export function startServer(opts: {
       // API typos and unsupported methods must never look like a successful SPA navigation.
       if (pathname === "/api" || pathname.startsWith("/api/")) return text("not found", 404);
 
-      // ── Static PWA (with SPA fallback) ───────────────────────────────────
-      return serveStatic(pathname);
+      // ── Optional bundled PWA adapter ─────────────────────────────────────
+        return pwa ? pwa.serve(pathname) : text("bridge API only", 404);
+      })();
+      return response ? applyCors(req, cfg, secure(response)) : response;
     },
     websocket: {
       open(socket) {
@@ -2072,6 +2058,88 @@ async function uploadPane(
   }
 }
 
+const CORS_METHODS = ["GET", "POST", "DELETE", "OPTIONS"] as const;
+const CORS_REQUEST_HEADERS = new Set(["content-type", "if-none-match"]);
+
+/**
+ * Complete a browser preflight only for an exact operator-configured PWA origin. Authentication,
+ * Host validation, and the existing write-origin gate still run; CORS never creates a second auth
+ * path. Device authorization is evaluated on the actual request after the trusted proxy injects it.
+ */
+export function corsPreflight(req: Request, cfg: Config): Response {
+  const origin = configuredCorsOrigin(req, cfg);
+  if (!origin) return text("cross-origin rejected", 403);
+  const requestedMethod = req.headers.get("access-control-request-method")?.toUpperCase();
+  if (!requestedMethod || !CORS_METHODS.includes(requestedMethod as (typeof CORS_METHODS)[number])) {
+    return text("cross-origin method rejected", 405);
+  }
+  const requestedHeaders = (req.headers.get("access-control-request-headers") ?? "")
+    .split(",")
+    .map((header) => header.trim().toLowerCase())
+    .filter(Boolean);
+  if (requestedHeaders.some((header) => !CORS_REQUEST_HEADERS.has(header))) {
+    return text("cross-origin headers rejected", 403);
+  }
+  const gate = checkAccess(req, cfg, requestedMethod === "GET" ? "read" : "write");
+  if (!gate.ok) return text(gate.reason, 403);
+  return applyCors(
+    req,
+    cfg,
+    secure(new Response(null, { status: 204 })),
+    requestedHeaders,
+  );
+}
+
+/** Add exact-origin CORS response headers without enabling cookies or wildcard access. */
+export function applyCors(
+  req: Request,
+  cfg: Config,
+  response: Response,
+  requestedHeaders?: string[],
+): Response {
+  const origin = configuredCorsOrigin(req, cfg);
+  if (!origin) return response;
+  response.headers.set("access-control-allow-origin", origin);
+  response.headers.set("access-control-allow-methods", CORS_METHODS.join(", "));
+  response.headers.set(
+    "access-control-allow-headers",
+    (requestedHeaders?.length ? requestedHeaders : [...CORS_REQUEST_HEADERS]).join(", "),
+  );
+  response.headers.set("access-control-expose-headers", "etag, x-herdr-control, x-herdr-control-build");
+  response.headers.set("access-control-max-age", "600");
+  if (req.headers.get("access-control-request-private-network") === "true") {
+    response.headers.set("access-control-allow-private-network", "true");
+  }
+  appendVary(response.headers, "Origin");
+  return response;
+}
+
+function configuredCorsOrigin(req: Request, cfg: Config): string | null {
+  const raw = req.headers.get("origin");
+  if (!raw) return null;
+  let origin: string;
+  try {
+    origin = new URL(raw).origin;
+  } catch {
+    return null;
+  }
+  return cfg.allowedOrigins.some((allowed) => {
+    try {
+      return new URL(allowed).origin === origin;
+    } catch {
+      return false;
+    }
+  })
+    ? origin
+    : null;
+}
+
+function appendVary(headers: Headers, value: string): void {
+  const current = headers.get("vary")?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+  if (!current.some((item) => item.toLowerCase() === value.toLowerCase())) current.push(value);
+  headers.set("vary", current.join(", "));
+}
+
 /**
  * Access gate for the API:
  *  - Host allowlist (mandatory for non-loopback): a loopback Host is trusted only when the server
@@ -2081,8 +2149,8 @@ async function uploadPane(
  *    omit Origin on same-origin GETs (so the snapshot poll passes); they send it on POSTs.
  *    localhost and explicitly-configured origins are also allowed.
  *  - Origin required for browser writes. Native clients instead send `X-Herdr-Client:
- *    herdr-mobile-v1`, a non-simple header that cross-origin browsers cannot deliver without a CORS
- *    preflight (which this bridge never grants).
+ *    herdr-mobile-v1`, a non-simple header. Browser preflights are granted only to exact
+ *    `COLLIE_ALLOWED_ORIGINS` entries and never allow this native-only header.
  *  - Reverse-proxy provenance: forwarding/Tailscale headers prevent a forged loopback Host from
  *    receiving direct-on-host exemptions.
  *  - Required remote identity: every non-loopback request needs a configured trusted user and the
@@ -2137,7 +2205,7 @@ export function checkAccess(
     req.headers.get(NATIVE_CLIENT_HEADER) !== NATIVE_CLIENT_VALUE
   ) {
     // Native fetch has no browser Origin. Its explicit non-simple header is the CSRF boundary:
-    // cross-origin browsers must preflight it, and this bridge never grants cross-origin CORS.
+    // cross-origin browsers must preflight it, and the receiver CORS contract never grants it.
     return { ok: false, reason: "origin required" };
   }
 
@@ -2248,9 +2316,8 @@ export function deviceAuth(req: Request, cfg: Config): DeviceAuth {
   return { enforced: true, device, authorized };
 }
 
-// Apply the shared hardening headers (nosniff / no-referrer) to any response. Every response the
-// bridge emits funnels through json(), text(), serveStatic(), or a handful of inline responses —
-// all of which pass through here — so the headers are set exactly once, consistently.
+// Apply shared hardening headers (nosniff / no-referrer). The fetch wrapper covers optional adapter
+// responses while the helpers also keep directly-tested route responses secure.
 function secure(res: Response): Response {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v);
   return res;
@@ -2294,76 +2361,4 @@ export function parseNotifyPrefsPatch(v: unknown): Partial<NotifyPrefs> | null {
     patch[key] = o[key] as boolean;
   }
   return patch;
-}
-
-// Build id of the bundle currently on disk (written by the Vite build to dist/build-info.json).
-// Surfaced via the X-Herdr-Control-Build header and /api/config so a stale cached client
-// can tell it's behind. Cached by file mtime so a frontend rebuild (live, no restart) is picked up.
-let buildCache: { id: string; mtime: number } | null = null;
-async function buildId(): Promise<string> {
-  try {
-    const f = Bun.file(join(WEB_DIR, "build-info.json"));
-    const mtime = f.lastModified;
-    if (!buildCache || buildCache.mtime !== mtime) {
-      const data = (await f.json()) as { id?: string };
-      buildCache = { id: data.id ?? "unknown", mtime };
-    }
-    return buildCache.id;
-  } catch {
-    return "unknown";
-  }
-}
-
-/**
- * Resolve a request pathname to an absolute path under `webDir`, or null if it escapes. Pure +
- * exported for tests. The `full === webDir || full.startsWith(webDir + sep)` check rejects both
- * `..` traversal AND a sibling dir that merely shares the prefix (e.g. `web/dist-x` vs `web/dist`) —
- * a bare `startsWith(webDir)` would let the latter through.
- */
-export function resolveStaticPath(
-  pathname: string,
-  webDir: string = WEB_DIR,
-): { rel: string; full: string } | null {
-  const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const full = normalize(join(webDir, rel));
-  if (full !== webDir && !full.startsWith(webDir + sep)) return null;
-  return { rel, full };
-}
-
-export async function serveStatic(pathname: string, webDir: string = WEB_DIR): Promise<Response> {
-  const resolved = resolveStaticPath(pathname, webDir);
-  if (!resolved) return text("forbidden", 403);
-  let { rel, full } = resolved;
-
-  let file = Bun.file(full);
-  if (!(await file.exists())) {
-    // SPA fallback: extension-less paths fall back to index.html; missing assets 404.
-    if (rel === "index.html") {
-      return text("frontend not built — run `bun run build` in web/", 503);
-    }
-    if (extname(rel) === "") {
-      rel = "index.html";
-      full = join(webDir, "index.html");
-      file = Bun.file(full);
-      if (!(await file.exists())) {
-        return text("frontend not built — run `bun run build` in web/", 503);
-      }
-    } else {
-      return text("not found", 404);
-    }
-  }
-
-  const ext = extname(full);
-  const headers: Record<string, string> = {
-    "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",
-    "x-herdr-control-build": await buildId(),
-  };
-  if (ext === ".html") {
-    headers["content-security-policy"] = CSP;
-    headers["cache-control"] = "no-cache";
-  } else if (rel.startsWith("assets/")) {
-    headers["cache-control"] = "public, max-age=31536000, immutable"; // hashed → cache hard
-  }
-  if (rel === "sw.js") headers["service-worker-allowed"] = "/";
-  return secure(new Response(file, { headers }));
 }

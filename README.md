@@ -11,11 +11,12 @@ for compatibility with existing installations and configuration directories.
 
 ## What it provides
 
-- A responsive browser control surface served by the relay itself.
+- A responsive browser control surface, optionally served by the bridge itself.
 - A native-client API used by the separate
   [Herdr Mobile](https://github.com/benkraus/herdr-mobile) application.
 - Live terminal frames with device-sized terminal control.
 - Workspace, worktree, tab, pane, and multi-session navigation.
+- Persisted machine receivers, so one installed PWA can switch between host-local bridges.
 - Bounded workspace file previews and read-only Git status/diff inspection.
 - Authorized terminal input and structural mutations.
 - Optional Web Push notifications for agent state changes.
@@ -56,6 +57,49 @@ columns and rows, which lets smaller devices navigate a live TUI instead of view
 text dump.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for ownership and protocol boundaries.
+
+## Deployment modes
+
+The bridge and PWA are independently runnable. The default remains an all-in-one deployment for a
+single-command install.
+
+| Mode | What runs here | Configuration |
+| --- | --- | --- |
+| Combined | Bridge plus its bundled `web/dist` | Default |
+| Bridge only | Host-local API for native or separately hosted clients | `COLLIE_SERVE_PWA=off` |
+| PWA only | Static browser bundle pointed at a bridge elsewhere | `VITE_HERDR_BRIDGE_URL` at build time |
+
+### Source-run CLI contract
+
+Keep the source-run commands simple:
+
+```bash
+bun run start         # start the bridge and PWA
+bun run start:bridge  # start only the bridge
+```
+
+Package-script changes should preserve this contract.
+
+For a bridge-only plugin installation, put this in the plugin `.env` before starting:
+
+```dotenv
+COLLIE_SERVE_PWA=off
+```
+
+The launcher skips the browser build and non-API routes return 404. Native clients and a PWA hosted
+elsewhere can still use every bridge endpoint.
+
+For a standalone PWA build:
+
+```bash
+VITE_HERDR_BRIDGE_URL=https://machine.your-tailnet.ts.net:8787 \
+VITE_HERDR_BRIDGE_LABEL="Primary machine" \
+  bun run build:pwa
+```
+
+Deploy `web/dist` to an HTTPS static host. On the target bridge, add that static host's exact origin
+to `COLLIE_ALLOWED_ORIGINS`. The PWA can run without a co-located bridge, but live operation still
+requires at least one reachable bridge; `?demo=1` remains available without one.
 
 ## Requirements
 
@@ -141,6 +185,7 @@ Copy [.env.example](.env.example) to `.env` in that directory. Important setting
 | `COLLIE_SERVE_MODE` | `https` | Tailscale Serve mode; `http` supports Headscale environments without certificates. |
 | `COLLIE_SERVE_PORT` | relay port | Dedicated public tailnet listener. |
 | `HERDR_SOCKET_PATH` | Herdr default socket | Override only for a nonstandard Herdr installation. |
+| `COLLIE_SERVE_PWA` | `on` | Set `off` for an API-only bridge with no bundled browser assets. |
 | `COLLIE_MULTI_SESSION` | `on` | Discover and expose named Herdr sessions. |
 | `COLLIE_POLL_MS` | `1500` | Fast fallback polling interval. |
 | `COLLIE_POLL_IDLE_MS` | `12000` | Safety-net polling while event subscriptions are healthy. |
@@ -150,7 +195,7 @@ Copy [.env.example](.env.example) to `.env` in that directory. Important setting
 | `COLLIE_TRUSTED_USER` | unset | Required matching proxy identity for remote API access. |
 | `COLLIE_TRUSTED_USER_HEADER` | `Tailscale-User-Login` | Identity header injected by the trusted proxy. |
 | `COLLIE_PUBLIC_HOSTS` | derived for Tailscale | Allowed public `host[:port]` values. |
-| `COLLIE_ALLOWED_ORIGINS` | unset | Extra full browser origins for custom reverse proxies. |
+| `COLLIE_ALLOWED_ORIGINS` | unset | Exact PWA/custom origins allowed to receive this bridge cross-origin. |
 | `COLLIE_DEVICE_HEADER` | unset | Optional proxy-injected device identity header. |
 | `COLLIE_DEVICE_ALLOWLIST` | unset | Devices allowed to perform write operations. |
 | `COLLIE_VAPID_PUBLIC` | auto-generated | Optional Web Push public-key override. |
@@ -178,6 +223,25 @@ COLLIE_ALLOWED_ORIGINS=https://herdr.example.com
 
 The proxy must strip and inject the configured trusted-user header and must preserve public request
 provenance using standard forwarded headers. Never accept a client-supplied identity header directly.
+
+### Multiple machines in one PWA
+
+Keep one bridge beside Herdr on every machine. Install/open the PWA from one stable HTTPS bridge,
+then allow that PWA origin on every additional machine:
+
+```dotenv
+# On the additional machine
+COLLIE_ALLOWED_ORIGINS=https://pwa-host.your-tailnet.ts.net:8787
+```
+
+Restart the additional bridge, open **Settings → Machines** in the installed PWA, and add that
+machine's Tailscale Serve URL. The machine picker scopes all snapshots, pane reads, and mutations;
+the existing session picker remains scoped to the selected machine. The additional bridge still
+requires its own `COLLIE_PUBLIC_HOSTS`/Serve mapping and matching `COLLIE_TRUSTED_USER` identity.
+
+Cross-machine receivers require HTTPS. Push registration remains owned by the PWA's built-in default
+bridge; receiver federation currently covers interactive access to additional bridges, not their push
+deep links.
 
 ### Optional device authorization
 
@@ -245,12 +309,14 @@ Run the relay and browser development server separately:
 # Terminal 1
 bun run dev:bridge
 
-# Terminal 2
-bun run dev:web
+# Terminal 2 (same-origin PWA through Vite's bridge proxy)
+bun run dev:pwa
 ```
 
 Vite proxies `/api` to `http://127.0.0.1:8787`. Add `?demo=1` to the browser URL to use preview
-data explicitly. Connection failures do not silently enable demo mode.
+data explicitly. Connection failures do not silently enable demo mode. To develop only the PWA
+against a remote bridge, set `VITE_HERDR_BRIDGE_URL` before `bun run dev:pwa` and allow
+`http://127.0.0.1:5173` on that bridge for this local development origin.
 
 Run verification:
 
@@ -263,11 +329,12 @@ bun run build
 ## Repository layout
 
 ```text
-bridge/                 Bun HTTP/WebSocket service and Herdr socket adapter
+bridge/                 Bun bridge; pwa-assets.ts is its optional static-bundle adapter
 docs/                   Architecture and protocol notes
 scripts/                Service, update, Tailscale, push, and release helpers
 systemd/                Reference systemd user unit
 web/                    React/Vite browser client and PWA
+web/.env.example        Standalone PWA receiver configuration
 herdr-plugin.toml       Herdr plugin manifest
 .env.example            Documented runtime configuration
 ```

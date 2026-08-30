@@ -27,6 +27,7 @@ const KEYS = [
   "COLLIE_VAPID_PRIVATE",
   "COLLIE_VAPID_SUBJECT",
   "COLLIE_STATE_DIR",
+  "COLLIE_SERVE_PWA",
   "COLLIE_MULTI_SESSION",
   "HERDR_SOCKET_PATH",
   "HERDR_PLUGIN_STATE_DIR",
@@ -72,6 +73,15 @@ describe("loadConfig", () => {
     expect(cfg.deviceAllowlist).toEqual([]);
     // Multi-session support is on by default.
     expect(cfg.multiSession).toBe(true);
+    // The normal all-in-one deployment serves the bundled PWA.
+    expect(cfg.servePwa).toBe(true);
+  });
+
+  test("can run as an API-only bridge without bundled PWA assets", () => {
+    process.env.COLLIE_SERVE_PWA = "off";
+    expect(loadConfig().servePwa).toBe(false);
+    process.env.COLLIE_SERVE_PWA = "on";
+    expect(loadConfig().servePwa).toBe(true);
   });
 
   test("parses COLLIE_MULTI_SESSION as a boolean toggle (default on)", () => {

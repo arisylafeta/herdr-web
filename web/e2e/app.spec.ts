@@ -56,7 +56,7 @@ test("mobile layout exposes the complete primary workflow", async ({ page }) => 
   await expect.poll(async () => (await sidebar.boundingBox())?.x ?? -1000).toBeGreaterThanOrEqual(-1);
   await sidebar.getByRole("button", { name: /release-check/i }).click();
   await expect(page.locator(".topbar-title h1")).toContainText(/opencode/i);
-  await expect.poll(async () => (await sidebar.boundingBox())?.x ?? 0).toBeLessThanOrEqual(-300);
+  await expect(page.locator('aside[aria-label="Herdr workspaces"]')).toHaveAttribute("aria-hidden", "true");
 
   const composer = page.getByLabel("Reply to pane");
   await expect(composer).toBeVisible();
@@ -66,6 +66,50 @@ test("mobile layout exposes the complete primary workflow", async ({ page }) => 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
   await page.screenshot({ path: "artifacts/herdr-web-mobile.png", fullPage: true });
+});
+
+test("one PWA receives sessions from a persisted machine bridge", async ({ page }) => {
+  const desktop = structuredClone(demoSnapshot);
+  desktop.workspaces = desktop.workspaces.map((workspace) => ({
+    ...workspace,
+    label: `desktop-${workspace.label}`,
+  }));
+  desktop.agents = desktop.agents.map((pane) => ({
+    ...pane,
+    workspaceLabel: `desktop-${pane.workspaceLabel}`,
+  }));
+  desktop.shellPanes = desktop.shellPanes.map((pane) => ({
+    ...pane,
+    workspaceLabel: `desktop-${pane.workspaceLabel}`,
+  }));
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "herdr-web:bridges:v1",
+      JSON.stringify([
+        { id: "desktop", label: "Desktop", baseUrl: "https://desktop.example" },
+      ]),
+    );
+  });
+  const receiverRequests: string[] = [];
+  await page.route("https://desktop.example/**", async (route) => {
+    receiverRequests.push(route.request().url());
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/snapshot") return route.fulfill({ json: desktop });
+    if (pathname.startsWith("/api/pane/")) {
+      const paneId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
+      return route.fulfill({
+        json: { paneId, text: "desktop receiver output", truncated: false, revision: 1 },
+      });
+    }
+    return route.fulfill({ status: 404, body: "not found" });
+  });
+
+  await page.goto("/?bridge=desktop");
+  await expect(page.getByTitle("Switch Herdr machine").locator("select")).toHaveValue("desktop");
+  await expect(page.getByText("desktop-t3-herdr", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("desktop receiver output", { exact: true })).toBeVisible();
+  expect(receiverRequests.length).toBeGreaterThanOrEqual(2);
+  expect(receiverRequests.every((url) => url.startsWith("https://desktop.example/api/"))).toBe(true);
 });
 
 test("live bridge snapshot renders without falling back to demo data", async ({ page, request }) => {
@@ -198,7 +242,14 @@ test("pane switches clear terminal output and composer drafts", async ({ page })
 });
 
 test("async attachments cannot cross sessions that reuse a pane ID", async ({ page }) => {
+  const defaultSession = structuredClone(demoSnapshot);
   const buildbox = structuredClone(demoSnapshot);
+  const sessions = [
+    ...defaultSession.sessions!,
+    { name: "buildbox", isPrimary: false, reachable: true, agents: 1, working: 1, blocked: 0 },
+  ];
+  defaultSession.sessions = sessions;
+  buildbox.sessions = sessions;
   buildbox.workspaces = [{ ...buildbox.workspaces[0]!, label: "buildbox" }];
   buildbox.tabs = [buildbox.tabs[0]!];
   buildbox.agents = [{ ...buildbox.agents[0]!, workspaceLabel: "buildbox" }];
@@ -206,7 +257,7 @@ test("async attachments cannot cross sessions that reuse a pane ID", async ({ pa
 
   await page.route("**/api/snapshot*", (route) => {
     const session = new URL(route.request().url()).searchParams.get("session");
-    return route.fulfill({ json: session === "buildbox" ? buildbox : demoSnapshot });
+    return route.fulfill({ json: session === "buildbox" ? buildbox : defaultSession });
   });
   await page.route("**/api/pane/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -233,7 +284,14 @@ test("async attachments cannot cross sessions that reuse a pane ID", async ({ pa
 
 test("session switching ignores an older snapshot that resolves late", async ({ page }) => {
   let defaultRequests = 0;
+  const defaultSession = structuredClone(demoSnapshot);
   const buildbox = structuredClone(demoSnapshot);
+  const sessions = [
+    ...defaultSession.sessions!,
+    { name: "buildbox", isPrimary: false, reachable: true, agents: 1, working: 1, blocked: 0 },
+  ];
+  defaultSession.sessions = sessions;
+  buildbox.sessions = sessions;
   buildbox.workspaces = [
     { workspaceId: "bw1", number: 1, label: "buildbox-only", focused: true, activeTabId: "bw1:t1", tabCount: 1, paneCount: 1 },
   ];
@@ -252,7 +310,7 @@ test("session switching ignores an older snapshot that resolves late", async ({ 
     }
     defaultRequests++;
     if (defaultRequests > 1) await new Promise((resolve) => setTimeout(resolve, 450));
-    await route.fulfill({ json: demoSnapshot });
+    await route.fulfill({ json: defaultSession });
   });
   await page.route("**/api/pane/**", (route) =>
     route.fulfill({ json: demoPaneById["w1:p1"] }),

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { BridgeReceiver } from "../lib/receiver";
 import {
   disablePush,
   enablePush,
@@ -8,18 +9,18 @@ import {
   type PushState,
 } from "../lib/push";
 
-export function usePushSetup() {
+export function usePushSetup(receiver: BridgeReceiver) {
   useEffect(() => {
     if (isPushDisabledByUser() || !("Notification" in window) || Notification.permission !== "granted") return;
-    void enablePush(false).catch(() => undefined);
-  }, []);
+    void enablePush(receiver, false).catch(() => undefined);
+  }, [receiver]);
 }
 
-export function usePushControl(active = true) {
+export function usePushControl(receiver: BridgeReceiver, active = true) {
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const refresh = useCallback(async () => setState(await getPushState()), []);
+  const refresh = useCallback(async () => setState(await getPushState(receiver)), [receiver]);
   useEffect(() => {
     if (active) {
       void refresh().then(() => setError(null)).catch((reason: unknown) => {
@@ -33,9 +34,9 @@ export function usePushControl(active = true) {
       setError(null);
       try {
         let result: EnableResult;
-        if (enabled) result = await enablePush(true);
+        if (enabled) result = await enablePush(receiver, true);
         else {
-          await disablePush();
+          await disablePush(receiver);
           result = { ok: true };
         }
         await refresh();
@@ -48,7 +49,7 @@ export function usePushControl(active = true) {
         setBusy(false);
       }
     },
-    [refresh],
+    [receiver, refresh],
   );
   return { state, busy, error, setEnabled };
 }

@@ -1,7 +1,7 @@
-import { AlertTriangle, Bell, BellRing, ExternalLink, FolderPlus, LoaderCircle, Monitor, Moon, RefreshCw, Search, SquarePen, Sun, X } from "lucide-react";
+import { AlertTriangle, Bell, BellRing, ExternalLink, FolderPlus, LoaderCircle, Monitor, Moon, Network, Plus, RefreshCw, Search, SquarePen, Sun, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePushControl } from "../hooks/usePush";
-import { sendPushTest } from "../lib/api";
+import type { BridgeProfile, BridgeReceiver } from "../lib/receiver";
 import type { ThemePreference } from "../lib/theme";
 import type { AgentView, SnapshotResponse, UpdateStatus } from "../lib/types";
 import { StatusDot } from "./StatusDot";
@@ -270,22 +270,35 @@ export function SettingsModal({
   update,
   updateBusy,
   readOnly,
+  pushReceiver,
+  bridges,
+  activeBridge,
   onThemeChange,
   onClose,
   onCheckUpdates,
+  onAddBridge,
+  onRemoveBridge,
 }: {
   open: boolean;
   themePreference: ThemePreference;
   update: UpdateStatus | undefined;
   updateBusy: boolean;
   readOnly: boolean;
+  pushReceiver: BridgeReceiver;
+  bridges: BridgeProfile[];
+  activeBridge: BridgeProfile;
   onThemeChange: (preference: ThemePreference) => void;
   onClose: () => void;
   onCheckUpdates: () => void;
+  onAddBridge: (label: string, baseUrl: string) => { ok: true } | { ok: false; error: string };
+  onRemoveBridge: (id: string) => void;
 }) {
-  const { state, busy, error: pushError, setEnabled } = usePushControl(open);
+  const { state, busy, error: pushError, setEnabled } = usePushControl(pushReceiver, open);
   const [pushTestBusy, setPushTestBusy] = useState(false);
   const [pushTestStatus, setPushTestStatus] = useState<string | null>(null);
+  const [bridgeLabel, setBridgeLabel] = useState("");
+  const [bridgeUrl, setBridgeUrl] = useState("");
+  const [bridgeError, setBridgeError] = useState<string | null>(null);
   const pushEnabled = Boolean(state?.subscribed && !state.userDisabled);
   const localPushEnabled = Boolean(state?.localSubscribed && !state.userDisabled);
   const pushToggleOn = pushEnabled || localPushEnabled;
@@ -324,7 +337,7 @@ export function SettingsModal({
       <div className="settings-list">
         <div>
           <span>Bridge endpoint</span>
-          <code>{window.location.origin}</code>
+          <code>{activeBridge.baseUrl}</code>
         </div>
         <div>
           <span>Remote access</span>
@@ -333,6 +346,68 @@ export function SettingsModal({
         <div>
           <span>Session discovery</span>
           <strong>All named Herdr sessions</strong>
+        </div>
+        <div className="settings-bridges">
+          <span className="settings-notification-copy">
+            <Network />
+            <span>
+              <strong>Machines</strong>
+              <small>Each URL receives sessions from one host-local bridge</small>
+            </span>
+          </span>
+          <div className="bridge-profile-list">
+            {bridges.map((bridge) => (
+              <div key={bridge.id} className={bridge.id === activeBridge.id ? "is-active" : ""}>
+                <span>
+                  <strong>{bridge.label}</strong>
+                  <code>{bridge.baseUrl}</code>
+                </span>
+                {!bridge.builtIn && (
+                  <button
+                    className="icon-button"
+                    onClick={() => onRemoveBridge(bridge.id)}
+                    title={`Remove ${bridge.label}`}
+                    aria-label={`Remove ${bridge.label}`}
+                  >
+                    <Trash2 />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <form
+            className="bridge-profile-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const result = onAddBridge(bridgeLabel, bridgeUrl);
+              if (!result.ok) {
+                setBridgeError(result.error);
+                return;
+              }
+              setBridgeLabel("");
+              setBridgeUrl("");
+              setBridgeError(null);
+            }}
+          >
+            <input
+              value={bridgeLabel}
+              onChange={(event) => setBridgeLabel(event.target.value)}
+              placeholder="Machine name"
+              aria-label="Machine name"
+            />
+            <input
+              value={bridgeUrl}
+              onChange={(event) => setBridgeUrl(event.target.value)}
+              placeholder="https://machine.tailnet.ts.net:8787"
+              aria-label="Bridge URL"
+              required
+            />
+            <button type="submit" className="button-secondary">
+              <Plus />
+              Add
+            </button>
+          </form>
+          {bridgeError && <small className="bridge-profile-error">{bridgeError}</small>}
         </div>
         <div>
           <span>Client build</span>
@@ -400,7 +475,7 @@ export function SettingsModal({
                 onClick={() => {
                   setPushTestBusy(true);
                   setPushTestStatus(null);
-                  void sendPushTest()
+                  void pushReceiver.sendPushTest()
                     .then((result) => setPushTestStatus(`Sent to ${result.subscribers} device${result.subscribers === 1 ? "" : "s"}`))
                     .catch((reason: unknown) => setPushTestStatus(reason instanceof Error ? reason.message : "Test failed"))
                     .finally(() => setPushTestBusy(false));

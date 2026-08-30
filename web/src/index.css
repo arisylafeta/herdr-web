@@ -1588,6 +1588,8 @@ svg {
 
 .settings-list {
   display: flex;
+  max-height: calc(100dvh - 110px);
+  overflow-y: auto;
   flex-direction: column;
   padding: 5px 18px 18px;
 }
@@ -1616,6 +1618,94 @@ svg {
   font-size: 10px;
   font-weight: 550;
   text-align: right;
+}
+
+.settings-bridges {
+  display: block !important;
+  padding: 13px 0 15px;
+}
+
+.settings-bridges > .settings-notification-copy {
+  margin-bottom: 10px;
+}
+
+.bridge-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bridge-profile-list > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-raised);
+}
+
+.bridge-profile-list > div.is-active {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.bridge-profile-list > div > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bridge-profile-list code {
+  overflow: hidden;
+  color: var(--muted-dim);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bridge-profile-list .icon-button {
+  flex: 0 0 28px;
+}
+
+.bridge-profile-list .icon-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.bridge-profile-form {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.65fr) minmax(150px, 1.35fr) auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.bridge-profile-form input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 10px;
+}
+
+.bridge-profile-form .button-secondary svg {
+  width: 13px;
+  height: 13px;
+}
+
+.bridge-profile-error {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger) !important;
+  font-size: 9px;
 }
 
 .settings-notification-row {

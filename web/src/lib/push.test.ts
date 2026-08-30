@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { disablePush, enablePush, getPushState } from "./push";
+import { BridgeReceiver } from "./receiver";
+
+function receiver(): BridgeReceiver {
+  return new BridgeReceiver({
+    id: "test",
+    label: "Test bridge",
+    baseUrl: "http://localhost",
+  });
+}
 
 describe("getPushState", () => {
   afterEach(() => {
@@ -40,7 +49,7 @@ describe("getPushState", () => {
         .mockResolvedValueOnce(new Response("registration refused", { status: 503 })),
     );
 
-    await expect(getPushState()).resolves.toMatchObject({
+    await expect(getPushState(receiver())).resolves.toMatchObject({
       availability: "ready",
       subscribed: false,
       localSubscribed: true,
@@ -91,7 +100,7 @@ describe("enablePush", () => {
         .mockResolvedValueOnce(new Response("registration refused", { status: 503 })),
     );
 
-    await expect(enablePush()).rejects.toThrow("registration refused");
+    await expect(enablePush(receiver())).rejects.toThrow("registration refused");
     expect(subscribe).toHaveBeenCalledOnce();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
@@ -127,7 +136,7 @@ describe("disablePush", () => {
     });
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response("failed", { status: 503 }))));
 
-    await expect(disablePush()).resolves.toBeUndefined();
+    await expect(disablePush(receiver())).resolves.toBeUndefined();
     expect(unsubscribe).toHaveBeenCalledOnce();
     expect(setItem).toHaveBeenCalledWith("herdr-control:push-disabled", "1");
     expect(removeItem).not.toHaveBeenCalled();
@@ -155,7 +164,7 @@ describe("disablePush", () => {
     });
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))));
 
-    await expect(disablePush()).resolves.toBeUndefined();
+    await expect(disablePush(receiver())).resolves.toBeUndefined();
     expect(setItem).toHaveBeenCalledWith("herdr-control:push-disabled", "1");
   });
 
@@ -181,7 +190,7 @@ describe("disablePush", () => {
     });
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response("failed", { status: 503 }))));
 
-    await expect(disablePush()).rejects.toThrow(/could not disable push notifications/i);
+    await expect(disablePush(receiver())).rejects.toThrow(/could not disable push notifications/i);
     expect(setItem).not.toHaveBeenCalled();
   });
 });

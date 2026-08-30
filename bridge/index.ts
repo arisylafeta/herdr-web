@@ -15,6 +15,7 @@ import {
 } from "./notifications.ts";
 import { NotifyPrefsStore } from "./notify-prefs.ts";
 import { ensurePrivateDirectory } from "./private-fs.ts";
+import { BundledPwaAssets } from "./pwa-assets.ts";
 import { Push, PushDeliveryQueue } from "./push.ts";
 import { startServer } from "./server.ts";
 import {
@@ -247,6 +248,7 @@ const server = startServer({
   updateMonitor,
   audit,
   liveUpdates,
+  ...(cfg.servePwa ? { pwa: new BundledPwaAssets() } : {}),
 });
 
 const shutdown = async () => {

@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  applyCors,
   checkAccess,
   closeScopePaneIds,
+  corsPreflight,
   CreateDeduplicator,
   deviceAuth,
   decodeWorkspaceId,
@@ -23,12 +25,10 @@ import {
   PaneMutationQueue,
   ReplyDeduplicator,
   replyWasSubmitted,
-  resolveStaticPath,
   mutationFailureResponse,
   notificationKindsReenabled,
   makePaneAnsiViewportAdaptive,
   sendReplySteps,
-  serveStatic,
   startServer,
   workspaceRootSource,
   type ReplySender,
@@ -73,6 +73,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     vapidPrivate: "",
     vapidSubject: "mailto:admin@example.com",
     stateDir: "/tmp/state",
+    servePwa: true,
     multiSession: true,
     ...overrides,
   };
@@ -209,6 +210,92 @@ describe("config route access", () => {
       server.stop(true);
     }
   });
+
+  test("answers an allowed receiver origin with readable CORS headers", async () => {
+    const receiverOrigin = "https://control.example.ts.net";
+    const server = startServer({
+      cfg: cfg({
+        port: 0,
+        allowedOrigins: [receiverOrigin],
+        publicHosts: ["desktop.example.ts.net"],
+      }),
+      registry: {} as never,
+      push: { enabled: true, publicKey: "AQ" } as never,
+      snooze: {} as never,
+      notifyPrefs: {} as never,
+      updateMonitor: {} as never,
+      audit: {} as never,
+      liveUpdates: {} as never,
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.port}/api/config`, {
+        headers: {
+          host: "desktop.example.ts.net",
+          origin: receiverOrigin,
+          "tailscale-user-login": "me@example.com",
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBe(receiverOrigin);
+      expect(response.headers.get("access-control-expose-headers")).toContain("etag");
+      expect(response.headers.get("vary")).toContain("Origin");
+    } finally {
+      server.stop(true);
+    }
+  });
+});
+
+describe("receiver CORS preflight", () => {
+  const receiverOrigin = "https://control.example.ts.net";
+  const receiverCfg = cfg({
+    allowedOrigins: [receiverOrigin],
+    publicHosts: ["desktop.example.ts.net"],
+  });
+
+  test("allows only bounded headers and advertises private-network access when requested", () => {
+    const response = corsPreflight(
+      authedReq({
+        host: "desktop.example.ts.net",
+        origin: receiverOrigin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type, if-none-match",
+        "access-control-request-private-network": "true",
+      }),
+      receiverCfg,
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe(receiverOrigin);
+    expect(response.headers.get("access-control-allow-private-network")).toBe("true");
+  });
+
+  test("rejects unconfigured origins and native-only headers", () => {
+    expect(corsPreflight(
+      authedReq({
+        host: "desktop.example.ts.net",
+        origin: "https://evil.example.com",
+        "access-control-request-method": "GET",
+      }),
+      receiverCfg,
+    ).status).toBe(403);
+    expect(corsPreflight(
+      authedReq({
+        host: "desktop.example.ts.net",
+        origin: receiverOrigin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "x-herdr-client",
+      }),
+      receiverCfg,
+    ).status).toBe(403);
+  });
+
+  test("does not add CORS headers to an unrelated origin", () => {
+    const response = applyCors(
+      req({ origin: "https://evil.example.com" }),
+      receiverCfg,
+      new Response("denied", { status: 403 }),
+    );
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
 });
 
 describe("pane seen route", () => {
@@ -243,11 +330,50 @@ describe("pane seen route", () => {
   });
 });
 
-describe("static frontend recovery", () => {
-  test("returns the documented build hint when the root index is absent", async () => {
-    const response = await serveStatic("/", `/tmp/herdr-control-missing-${crypto.randomUUID()}`);
-    expect(response.status).toBe(503);
-    expect(await response.text()).toContain("frontend not built");
+describe("PWA deployment seam", () => {
+  const dependencies = {
+    registry: {} as never,
+    push: { enabled: false, publicKey: "" } as never,
+    snooze: {} as never,
+    notifyPrefs: {} as never,
+    updateMonitor: {} as never,
+    audit: {} as never,
+    liveUpdates: {} as never,
+  };
+
+  test("runs as an API-only bridge when no PWA adapter is installed", async () => {
+    const server = startServer({ cfg: cfg({ port: 0, servePwa: false }), ...dependencies });
+    try {
+      const configResponse = await fetch(`http://127.0.0.1:${server.port}/api/config`);
+      expect(configResponse.status).toBe(200);
+      expect(await configResponse.json()).toMatchObject({ build: "external" });
+      const rootResponse = await fetch(`http://127.0.0.1:${server.port}/`);
+      expect(rootResponse.status).toBe(404);
+      expect(await rootResponse.text()).toBe("bridge API only");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("delegates non-API routes through an installed PWA adapter", async () => {
+    const server = startServer({
+      cfg: cfg({ port: 0 }),
+      ...dependencies,
+      pwa: {
+        buildId: async () => "pwa-test",
+        serve: async (pathname) => new Response(`PWA ${pathname}`),
+      },
+    });
+    try {
+      const configResponse = await fetch(`http://127.0.0.1:${server.port}/api/config`);
+      expect(await configResponse.json()).toMatchObject({ build: "pwa-test" });
+      const rootResponse = await fetch(`http://127.0.0.1:${server.port}/machine/desktop`);
+      expect(rootResponse.status).toBe(200);
+      expect(await rootResponse.text()).toBe("PWA /machine/desktop");
+      expect(rootResponse.headers.get("x-content-type-options")).toBe("nosniff");
+    } finally {
+      server.stop(true);
+    }
   });
 });
 
@@ -530,34 +656,6 @@ describe("isHostAllowed", () => {
       deviceHeader: "x-device-id",
       deviceAllowlist: ["phone"],
     })).toEqual({ enforced: true, device: "phone", authorized: false });
-  });
-});
-
-describe("resolveStaticPath — static path traversal guard", () => {
-  const WEB = "/srv/collie/web/dist";
-
-  test("resolves a normal file under the web dir", () => {
-    expect(resolveStaticPath("/assets/app.js", WEB)).toEqual({
-      rel: "assets/app.js",
-      full: "/srv/collie/web/dist/assets/app.js",
-    });
-  });
-
-  test("maps / to index.html", () => {
-    expect(resolveStaticPath("/", WEB)).toEqual({
-      rel: "index.html",
-      full: "/srv/collie/web/dist/index.html",
-    });
-  });
-
-  test("rejects a .. traversal attempt", () => {
-    expect(resolveStaticPath("/../../etc/passwd", WEB)).toBeNull();
-  });
-
-  test("rejects a sibling dir that merely shares the prefix (web/dist-x)", () => {
-    // normalize(join(WEB, "../dist-x/evil.js")) === "/srv/collie/web/dist-x/evil.js" — a bare
-    // startsWith(WEB) would accept it; the `+ sep` boundary is what rejects it.
-    expect(resolveStaticPath("/../dist-x/evil.js", WEB)).toBeNull();
   });
 });
 

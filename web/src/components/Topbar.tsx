@@ -2,6 +2,7 @@ import {
   ChevronDown,
   Menu,
   MoreHorizontal,
+  Network,
   PanelRight,
   Plus,
   RefreshCw,
@@ -10,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import type { AgentView, SessionSummary, TabView } from "../lib/types";
+import type { BridgeProfile } from "../lib/receiver";
 import { STATUS_LABEL } from "../lib/types";
 import { StatusDot } from "./StatusDot";
 
@@ -18,9 +20,12 @@ interface TopbarProps {
   tab: TabView | undefined;
   sessions: SessionSummary[];
   session: string | undefined;
+  bridges: BridgeProfile[];
+  bridgeId: string;
   bridgeConnected: boolean;
   readOnly: boolean;
   onSessionChange: (session: string | undefined) => void;
+  onBridgeChange: (bridgeId: string) => void;
   onOpenSidebar: () => void;
   onNewTab: () => void;
   onRefresh: () => void;
@@ -32,9 +37,12 @@ export function Topbar({
   tab,
   sessions,
   session,
+  bridges,
+  bridgeId,
   bridgeConnected,
   readOnly,
   onSessionChange,
+  onBridgeChange,
   onOpenSidebar,
   onNewTab,
   onRefresh,
@@ -61,6 +69,18 @@ export function Topbar({
       </div>
 
       <div className="topbar-actions">
+        {bridges.length > 1 && (
+          <label className="session-select bridge-select" title="Switch Herdr machine">
+            <Network />
+            <select value={bridgeId} onChange={(event) => onBridgeChange(event.target.value)}>
+              {bridges.map((bridge) => (
+                <option key={bridge.id} value={bridge.id}>{bridge.label}</option>
+              ))}
+            </select>
+            <ChevronDown />
+          </label>
+        )}
+
         {sessions.length > 1 && (
           <label className="session-select" title="Switch Herdr session">
             <Server />

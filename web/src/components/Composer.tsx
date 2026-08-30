@@ -17,6 +17,7 @@ import type { AgentView, TabView } from "../lib/types";
 interface ComposerProps {
   pane: AgentView | null;
   tab: TabView | undefined;
+  bridgeId: string;
   session: string | undefined;
   busy: boolean;
   running: boolean;
@@ -36,12 +37,12 @@ export const specialKeys = [
   { label: "Enter", keys: ["Enter"] },
 ];
 
-export function Composer({ pane, tab, session, busy, running, readOnly, onSend, onStop, onSendKeys, onUpload }: ComposerProps) {
+export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly, onSend, onStop, onSendKeys, onUpload }: ComposerProps) {
   const [value, setValue] = useState("");
   const [keysOpen, setKeysOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
-  const contextId = `${session ?? ""}\n${pane?.paneId ?? ""}`;
+  const contextId = `${bridgeId}\n${session ?? ""}\n${pane?.paneId ?? ""}`;
   const contextIdRef = useRef(contextId);
   contextIdRef.current = contextId;
   const disabled = !pane || busy || readOnly;

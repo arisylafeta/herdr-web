@@ -91,6 +91,15 @@ if [ -z "$TAILSCALE" ] && [ -x "/Applications/Tailscale.app/Contents/MacOS/Tails
 fi
 WEB_DIST="${PLUGIN_ROOT}/web/dist/index.html"
 
+pwa_serving_enabled() {
+  local value
+  value="$(printf '%s' "${COLLIE_SERVE_PWA:-on}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$value" in
+    off|0|false|no) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 have_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
 have_launchd() { [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null; }
 launchd_domain() { printf 'gui/%s' "$(id -u)"; }
@@ -137,26 +146,25 @@ plist_escape_value() {
     -e "s/'/\&apos;/g"
 }
 
-# Build the Vite/React PWA into web/dist. The bridge serves that directory; without it the API
-# still runs but the UI 503s. Safe to call repeatedly (no-op if already built, unless forced).
-cmd_build() {
+# Install and validate only the Bun bridge. Bun executes the TypeScript source directly, so there is
+# no emitted bridge artifact.
+cmd_build_bridge() {
   [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
-  # Version gate: refuse to build a release whose version files / CHANGELOG disagree.
-  # Override (e.g. mid-refactor) with SKIP_VERSION_CHECK=1.
   if [ "${SKIP_VERSION_CHECK:-}" != "1" ]; then
     bash "${PLUGIN_ROOT}/scripts/check-version.sh"
   fi
-  # Install BOTH dependency trees before typechecking. The root typecheck (tsconfig `types: ["bun"]`)
-  # resolves @types/bun from the ROOT node_modules; a fresh Herdr checkout ships neither tree, so
-  # without a root install the very first build dies with TS2688 "Cannot find type definition file
-  # for 'bun'" and Herdr rolls the install back (issue #9). It works on the dev host only because a
-  # manual `bun install` left root node_modules behind.
   ( cd "${PLUGIN_ROOT}" && "$BUN" install )
-  ( cd "${PLUGIN_ROOT}/web" && "$BUN" install )
-  # Typecheck BOTH sides before building — the Vite build itself does not typecheck, so a type
-  # error would otherwise ship silently. Skip with SKIP_TYPECHECK=1 (same hatch as the pre-push hook).
   if [ "${SKIP_TYPECHECK:-}" != "1" ]; then
-    ( cd "${PLUGIN_ROOT}" && "$BUN" run typecheck )
+    ( cd "${PLUGIN_ROOT}" && "$BUN" run typecheck:bridge )
+  fi
+}
+
+# Build only the Vite/React PWA into web/dist. Safe to call while the bridge is live because the
+# staged bundle is swapped into place atomically.
+cmd_build_pwa() {
+  [ -n "$BUN" ] || { echo "error: bun not found on PATH" >&2; exit 1; }
+  ( cd "${PLUGIN_ROOT}/web" && "$BUN" install )
+  if [ "${SKIP_TYPECHECK:-}" != "1" ]; then
     ( cd "${PLUGIN_ROOT}/web" && "$BUN" run typecheck )
   fi
   # Staged build + atomic swap. Vite empties its output dir first, so building straight into web/dist
@@ -178,6 +186,12 @@ cmd_build() {
     [ ! -e "$backup" ] || mv "$backup" "$dist"
     return 1
   fi
+}
+
+# Combined release build retained for the normal all-in-one plugin installation.
+cmd_build() {
+  cmd_build_bridge
+  cmd_build_pwa
 }
 
 ensure_build() {
@@ -221,6 +235,11 @@ resolved_public_hosts() {
 # the authoritative "what's running", unlike Herdr's registry value which is cached at link time.
 collie_version() {
   local bi="${PLUGIN_ROOT}/web/dist/build-info.json" v sha
+  if ! pwa_serving_enabled; then
+    v="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${PLUGIN_ROOT}/herdr-plugin.toml" | head -1)"
+    [ -n "$v" ] && echo "${v} (bridge only)" || echo "unknown (bridge only)"
+    return
+  fi
   if [ -f "$bi" ]; then
     v="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$bi" | head -1)"
     sha="$(sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$bi" | head -1)"
@@ -269,7 +288,7 @@ bridge_ready() {
 # One scannable status summary — readiness, how it is supervised, and both URLs. Shared by
 # `start` (post-launch confirmation) and `status` (on demand) so the two always agree.
 print_status_banner() {
-  local svc
+  local svc mode
   if have_systemd; then
     svc="systemd --user (${UNIT}) · $(systemctl --user is-active "$UNIT" 2>/dev/null || echo unknown)"
   elif have_launchd && launchctl print "$(launchd_domain)/${LAUNCHD_LABEL}" >/dev/null 2>&1; then
@@ -280,6 +299,7 @@ print_status_banner() {
     svc="not supervised"
   fi
   local ver; ver="$(collie_version)"
+  if pwa_serving_enabled; then mode="bridge + bundled PWA"; else mode="API-only bridge"; fi
   echo
   if bridge_ready; then
     echo "  ✓ Herdr Web is running  ·  v${ver}"
@@ -287,6 +307,7 @@ print_status_banner() {
     echo "  ⚠ Herdr Web isn't answering on :${PORT} yet (v${ver}) — check 'collie-ctl.sh logs'"
   fi
   echo "    service   ${svc}"
+  echo "    mode      ${mode}"
   echo "    local     http://127.0.0.1:${PORT}"
   echo "    tailnet   $(bridge_url)"
   echo
@@ -381,7 +402,11 @@ EOF
 }
 
 cmd_start() {
-  ensure_build || true
+  if pwa_serving_enabled; then
+    ensure_build || true
+  else
+    echo "starting API-only bridge (COLLIE_SERVE_PWA=off)"
+  fi
   if have_systemd; then
     write_unit
     systemctl --user enable --now "$UNIT"
@@ -536,11 +561,11 @@ refresh_registry() {
   fi
 }
 
-# Second half of `update`, run from the just-pulled script. cmd_build re-runs the version gate (a
-# half-bumped release can't go live) and rebuilds web/dist; cmd_restart picks up any bridge/ changes;
-# refresh_registry re-links so Herdr learns any newly added actions / the new version.
+# Second half of `update`, run from the just-pulled script. The version gate and bridge validation
+# always run; web/dist is rebuilt only when this deployment serves the bundled PWA. Restart then
+# picks up bridge changes, and the registry refresh exposes new actions/version metadata.
 cmd_apply_update() {
-  cmd_build
+  if pwa_serving_enabled; then cmd_build; else cmd_build_bridge; fi
   cmd_restart
   refresh_registry
   echo "✓ update complete"
@@ -853,6 +878,8 @@ main() {
     update)  cmd_update ;;
     _apply-update) cmd_apply_update ;;  # internal: second half of `update`, run post-pull
     build)   cmd_build ;;
+    build-bridge) cmd_build_bridge ;;
+    build-pwa) cmd_build_pwa ;;
     serve)   cmd_serve; echo "open: $(bridge_url)" ;;
     unserve) cmd_unserve ;;
     status)  cmd_status ;;
@@ -860,7 +887,7 @@ main() {
     version) cmd_version ;;
     push-test) shift || true; cmd_push_test "$@" ;;
     logs)    cmd_logs "${2:-50}" ;;
-    *) echo "usage: collie-ctl.sh {start|stop|restart|uninstall|update|version|push-test|build|serve|unserve|status|url|logs}" >&2; return 2 ;;
+    *) echo "usage: collie-ctl.sh {start|stop|restart|uninstall|update|version|push-test|build|build-bridge|build-pwa|serve|unserve|status|url|logs}" >&2; return 2 ;;
   esac
 }
 

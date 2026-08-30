@@ -37,6 +37,7 @@ describe("Composer special keys", () => {
       root.render(createElement(Composer, {
         pane,
         tab: demoSnapshot.tabs.find((tab) => tab.tabId === pane.tabId),
+        bridgeId: "local",
         session: "default",
         busy: false,
         running: true,
@@ -78,6 +79,7 @@ describe("Composer special keys", () => {
       createElement(Composer, {
         pane,
         tab: demoSnapshot.tabs.find((tab) => tab.tabId === pane.tabId),
+        bridgeId: "local",
         session: "default",
         busy: true,
         running: false,

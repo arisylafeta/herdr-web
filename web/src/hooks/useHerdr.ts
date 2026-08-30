@@ -1,17 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  checkForUpdates as checkForUpdatesRequest,
-  closePane as closePaneRequest,
-  createTab as createTabRequest,
-  createWorkspace as createWorkspaceRequest,
-  fetchPane,
-  fetchSnapshot,
-  markPaneSeen as markPaneSeenRequest,
-  sendKeys as sendKeysRequest,
-  sendReply,
-  uploadImage as uploadImageRequest,
-  ApiError,
-} from "../lib/api";
+import { ApiError, type BridgeReceiver } from "../lib/receiver";
 import { demoPaneById, demoSnapshot } from "../lib/mock";
 import {
   demoModeFromSearch,
@@ -60,7 +48,7 @@ function defaultPane(snapshot: SnapshotResponse): AgentView | undefined {
   );
 }
 
-export function useHerdr() {
+export function useHerdr(receiver: BridgeReceiver) {
   const [snapshot, setSnapshot] = useState<SnapshotResponse>(() =>
     FORCE_DEMO ? cloneDemoSnapshot() : emptySnapshot(),
   );
@@ -77,6 +65,7 @@ export function useHerdr() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const noticeId = useRef(0);
   const demoOutput = useRef<Record<string, PaneReadResponse>>(structuredClone(demoPaneById));
+  const receiverRef = useRef(receiver);
   const sessionRef = useRef(session);
   const selectedPaneIdRef = useRef(selectedPaneId);
   selectedPaneIdRef.current = selectedPaneId;
@@ -120,7 +109,7 @@ export function useHerdr() {
     const controller = new AbortController();
     const promise = (async () => {
       try {
-        const next = await fetchSnapshot(requestedSession, controller.signal);
+        const next = await receiver.snapshot(requestedSession, controller.signal);
         if (!shouldApplySnapshot(requestedSession, sessionRef.current, generation, snapshotGenerationRef.current)) return;
         const authoritativePaneIds = new Set(
           [...next.agents, ...next.shellPanes].map((pane) => pane.paneId),
@@ -175,9 +164,28 @@ export function useHerdr() {
     })();
     snapshotRequestRef.current = { session: requestedSession, controller, promise };
     return promise;
-  }, [pushNotice]);
+  }, [pushNotice, receiver]);
 
   useEffect(() => () => snapshotRequestRef.current?.controller.abort(), []);
+
+  useEffect(() => {
+    if (receiverRef.current.id === receiver.id) return;
+    receiverRef.current = receiver;
+    snapshotRequestRef.current?.controller.abort();
+    snapshotRequestRef.current = null;
+    pendingCreatedPanesRef.current.clear();
+    tabCreateRequestRef.current = null;
+    workspaceCreateRequestRef.current = null;
+    replyRequestsRef.current.clear();
+    snapshotGenerationRef.current++;
+    hasConnectedRef.current = false;
+    sessionRef.current = undefined;
+    setSessionState(undefined);
+    setSelectedPaneId("");
+    setPaneOutput(null);
+    setSnapshot(emptySnapshot());
+    setMode("connecting");
+  }, [receiver]);
 
   useEffect(() => {
     void refreshSnapshot();
@@ -209,7 +217,7 @@ export function useHerdr() {
       inFlight = true;
       setPaneLoading(true);
       try {
-        const next = await fetchPane(selectedPaneId, session, controller.signal);
+        const next = await receiver.pane(selectedPaneId, session, controller.signal);
         if (!cancelled) setPaneOutput(next);
       } catch (error) {
         if (!cancelled) pushNotice("error", error instanceof Error ? error.message : "Pane read failed");
@@ -225,7 +233,7 @@ export function useHerdr() {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [mode, pushNotice, selectedPaneId, session]);
+  }, [mode, pushNotice, receiver, selectedPaneId, session]);
 
   const allPanes = useMemo(() => [...snapshot.agents, ...snapshot.shellPanes], [snapshot]);
   const selectedPane = allPanes.find((pane) => pane.paneId === selectedPaneId) ?? null;
@@ -235,12 +243,12 @@ export function useHerdr() {
     if (mode === "demo" || !selectedPaneId) return;
     const markVisibleCompletion = () => {
       if (!shouldMarkPaneSeen(selectedPane?.status, document.visibilityState)) return;
-      void markPaneSeenRequest(selectedPaneId, session).catch(() => undefined);
+      void receiver.markPaneSeen(selectedPaneId, session).catch(() => undefined);
     };
     markVisibleCompletion();
     document.addEventListener("visibilitychange", markVisibleCompletion);
     return () => document.removeEventListener("visibilitychange", markVisibleCompletion);
-  }, [mode, selectedPane?.status, selectedPaneId, session]);
+  }, [mode, receiver, selectedPane?.status, selectedPaneId, session]);
 
   const selectPane = useCallback((paneId: string) => {
     setSelectedPaneId(paneId);
@@ -322,16 +330,17 @@ export function useHerdr() {
       }
 
       const normalizedText = text.trim();
-      const replyKey = `${session ?? ""}\n${selectedPaneId}`;
+      const replyKey = `${receiver.id}\n${session ?? ""}\n${selectedPaneId}`;
       const prior = replyRequestsRef.current.get(replyKey);
       const request = prior?.text === normalizedText
         ? prior
         : { text: normalizedText, requestId: window.crypto.randomUUID() };
       replyRequestsRef.current.set(replyKey, request);
       const result = await runAction(() =>
-        sendReply(selectedPaneId, request.text, request.requestId, session),
+        receiver.reply(selectedPaneId, request.text, request.requestId, session),
       );
       if (!result) return false;
+      if (receiverRef.current.id !== receiver.id) return Boolean(result.ok || result.textDelivered);
       if (replyRequestsRef.current.get(replyKey)?.requestId === request.requestId) {
         replyRequestsRef.current.delete(replyKey);
       }
@@ -352,7 +361,7 @@ export function useHerdr() {
       await refreshSnapshot();
       return true;
     },
-    [mode, pushNotice, refreshSnapshot, runAction, selectedPaneId, session],
+    [mode, pushNotice, receiver, refreshSnapshot, runAction, selectedPaneId, session],
   );
 
   const sendKeys = useCallback(
@@ -362,10 +371,10 @@ export function useHerdr() {
         pushNotice("info", `Sent ${keys.join(" + ")} in demo mode.`);
         return;
       }
-      const result = await runAction(() => sendKeysRequest(selectedPaneId, keys, session));
+      const result = await runAction(() => receiver.keys(selectedPaneId, keys, session));
       if (result && !result.ok) pushNotice("error", result.error);
     },
-    [mode, pushNotice, runAction, selectedPaneId, session],
+    [mode, pushNotice, receiver, runAction, selectedPaneId, session],
   );
 
   const interrupt = useCallback(async () => {
@@ -384,7 +393,7 @@ export function useHerdr() {
 
     interruptInFlightRef.current = true;
     try {
-      const result = await sendKeysRequest(paneId, ["Esc"], session);
+      const result = await receiver.keys(paneId, ["Esc"], session);
       if (!result.ok) pushNotice("error", result.error);
       else pushNotice("info", "Sent Esc to stop the agent.");
     } catch (error) {
@@ -392,7 +401,7 @@ export function useHerdr() {
     } finally {
       interruptInFlightRef.current = false;
     }
-  }, [mode, pushNotice, selectedPaneId, session]);
+  }, [mode, pushNotice, receiver, selectedPaneId, session]);
 
   const createTab = useCallback(
     async (workspaceId: string, label: string) => {
@@ -435,16 +444,17 @@ export function useHerdr() {
         pushNotice("success", "Demo tab created.");
         return;
       }
-      const signature = JSON.stringify({ session, workspaceId, label });
+      const signature = JSON.stringify({ bridge: receiver.id, session, workspaceId, label });
       const prior = tabCreateRequestRef.current;
       const request = prior?.signature === signature
         ? prior
         : { signature, requestId: window.crypto.randomUUID() };
       tabCreateRequestRef.current = request;
       const result = await runAction(() =>
-        createTabRequest(workspaceId, label, request.requestId, session),
+        receiver.createTab(workspaceId, label, request.requestId, session),
       );
       if (!result) return;
+      if (receiverRef.current.id !== receiver.id) return;
       if (tabCreateRequestRef.current?.requestId === request.requestId) {
         tabCreateRequestRef.current = null;
       }
@@ -471,7 +481,7 @@ export function useHerdr() {
       await refreshSnapshot();
       pushNotice("success", "New Herdr tab created.");
     },
-    [mode, pushNotice, refreshSnapshot, runAction, session, snapshot.workspaces],
+    [mode, pushNotice, receiver, refreshSnapshot, runAction, session, snapshot.workspaces],
   );
 
   const createWorkspace = useCallback(
@@ -507,16 +517,17 @@ export function useHerdr() {
         pushNotice("success", "Demo workspace created.");
         return;
       }
-      const signature = JSON.stringify({ session, label, cwd });
+      const signature = JSON.stringify({ bridge: receiver.id, session, label, cwd });
       const prior = workspaceCreateRequestRef.current;
       const request = prior?.signature === signature
         ? prior
         : { signature, requestId: window.crypto.randomUUID() };
       workspaceCreateRequestRef.current = request;
       const result = await runAction(() =>
-        createWorkspaceRequest({ label, cwd }, request.requestId, session),
+        receiver.createWorkspace({ label, cwd }, request.requestId, session),
       );
       if (!result) return;
+      if (receiverRef.current.id !== receiver.id) return;
       if (workspaceCreateRequestRef.current?.requestId === request.requestId) {
         workspaceCreateRequestRef.current = null;
       }
@@ -542,7 +553,7 @@ export function useHerdr() {
       await refreshSnapshot();
       pushNotice("success", "New Herdr workspace created.");
     },
-    [mode, pushNotice, refreshSnapshot, runAction, session, snapshot.workspaces.length],
+    [mode, pushNotice, receiver, refreshSnapshot, runAction, session, snapshot.workspaces.length],
   );
 
   const closePane = useCallback(async (paneId: string, targetSession?: string) => {
@@ -556,20 +567,22 @@ export function useHerdr() {
       pushNotice("success", "Demo pane closed.");
       return;
     }
-    const result = await runAction(() => closePaneRequest(paneId, targetSession));
+    const result = await runAction(() => receiver.closePane(paneId, targetSession));
     if (!result) return;
+    if (receiverRef.current.id !== receiver.id) return;
     if (!result.ok) return pushNotice("error", result.error);
     await refreshSnapshot();
     pushNotice("success", "Pane terminated.");
-  }, [mode, pushNotice, refreshSnapshot, runAction]);
+  }, [mode, pushNotice, receiver, refreshSnapshot, runAction]);
 
   const checkForUpdates = useCallback(async () => {
     if (mode === "demo") {
       pushNotice("info", "Update checks are available through the live bridge.");
       return;
     }
-    const update = await runAction(checkForUpdatesRequest);
+    const update = await runAction(() => receiver.checkForUpdates());
     if (!update) return;
+    if (receiverRef.current.id !== receiver.id) return;
     setSnapshot((current) => ({ ...current, update }));
     if (!update.enabled) {
       pushNotice("info", "Update checks need COLLIE_UPDATE_REPO configured on the bridge.");
@@ -582,7 +595,7 @@ export function useHerdr() {
     } else {
       pushNotice("success", "Herdr Web is up to date.");
     }
-  }, [mode, pushNotice, runAction]);
+  }, [mode, pushNotice, receiver, runAction]);
 
   const uploadImage = useCallback(
     async (file: File) => {
@@ -591,15 +604,16 @@ export function useHerdr() {
         pushNotice("success", "Demo image attached.");
         return `/demo/uploads/${file.name}`;
       }
-      const result = await runAction(() => uploadImageRequest(selectedPaneId, file, session));
+      const result = await runAction(() => receiver.uploadImage(selectedPaneId, file, session));
       if (!result) return undefined;
+      if (receiverRef.current.id !== receiver.id) return undefined;
       if (!result.ok) {
         pushNotice("error", result.error);
         return undefined;
       }
       return result.path;
     },
-    [mode, pushNotice, runAction, selectedPaneId, session],
+    [mode, pushNotice, receiver, runAction, selectedPaneId, session],
   );
 
   return {

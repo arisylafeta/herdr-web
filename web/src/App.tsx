@@ -12,14 +12,16 @@ import { SessionView } from "./components/SessionView";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { useHerdr } from "./hooks/useHerdr";
+import { useBridges } from "./hooks/useBridges";
 import { usePushSetup } from "./hooks/usePush";
 import { useTheme } from "./lib/theme";
 import { isReadOnly, type AgentView } from "./lib/types";
 
 export default function App() {
-  usePushSetup();
+  const bridges = useBridges();
+  usePushSetup(bridges.defaultReceiver);
   const theme = useTheme();
-  const herdr = useHerdr();
+  const herdr = useHerdr(bridges.receiver);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(() =>
     window.matchMedia("(max-width: 820px)").matches,
@@ -124,9 +126,12 @@ export default function App() {
           tab={selectedTab}
           sessions={sessions}
           session={herdr.session}
+          bridges={bridges.profiles}
+          bridgeId={bridges.activeId}
           bridgeConnected={herdr.snapshot.bridge === "connected"}
           readOnly={readOnly}
           onSessionChange={herdr.setSession}
+          onBridgeChange={bridges.select}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
           onNewTab={() => openNewTab(herdr.selectedPane?.workspaceId)}
           onRefresh={() => void herdr.refreshSnapshot()}
@@ -167,6 +172,7 @@ export default function App() {
         <Composer
           pane={herdr.selectedPane}
           tab={selectedTab}
+          bridgeId={bridges.activeId}
           session={herdr.session}
           busy={herdr.actionBusy}
           running={herdr.selectedPane?.status === "working"}
@@ -215,8 +221,13 @@ export default function App() {
         update={update}
         updateBusy={herdr.actionBusy}
         readOnly={readOnly}
+        pushReceiver={bridges.defaultReceiver}
+        bridges={bridges.profiles}
+        activeBridge={bridges.active}
         onThemeChange={theme.setPreference}
         onCheckUpdates={() => void herdr.checkForUpdates()}
+        onAddBridge={bridges.add}
+        onRemoveBridge={bridges.remove}
         onClose={() => {
           setSettingsOpen(false);
           const url = new URL(window.location.href);

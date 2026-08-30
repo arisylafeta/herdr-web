@@ -12,6 +12,31 @@ afterEach(async () => {
 });
 
 describe("collie launcher", () => {
+  test("recognizes bridge-only mode without requiring a PWA build", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "herdr-control-bridge-only-"));
+    temporaryDirectories.push(directory);
+    const script = resolve(import.meta.dir, "../scripts/collie-ctl.sh");
+    const result = Bun.spawnSync(
+      [
+        "/bin/bash",
+        "-c",
+        'source "$1"; COLLIE_SERVE_PWA=off; ! pwa_serving_enabled; COLLIE_SERVE_PWA=on; pwa_serving_enabled',
+        "bash",
+        script,
+      ],
+      {
+        env: {
+          ...process.env,
+          HOME: directory,
+          HERDR_PLUGIN_CONFIG_DIR: join(directory, "config"),
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      },
+    );
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+  });
+
   test("prints a quote-safe managed reinstall command", async () => {
     const directory = await mkdtemp(join(tmpdir(), "herdr-control-launcher-"));
     temporaryDirectories.push(directory);

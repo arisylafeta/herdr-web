@@ -6,13 +6,22 @@
   "type": "module",
   "description": "A responsive web control plane for durable Herdr sessions",
   "scripts": {
-    "dev": "bun run bridge/index.ts",
+    "dev": "bun run dev:bridge",
+    "start:bridge": "bun run bridge/index.ts",
     "dev:bridge": "bun --watch bridge/index.ts",
-    "dev:web": "cd web && bun run dev",
+    "dev:pwa": "cd web && bun run dev",
+    "dev:web": "bun run dev:pwa",
     "build": "bun install && cd web && bun install && cd .. && bun run typecheck && cd web && bun run build",
-    "build:web": "cd web && bun run build",
-    "test": "bun test ./bridge && cd web && bun run test",
-    "typecheck": "bunx tsc --noEmit && cd web && bun run typecheck"
+    "build:bridge": "bun run typecheck:bridge",
+    "build:pwa": "cd web && bun run build",
+    "build:web": "bun run build:pwa",
+    "preview:pwa": "cd web && bun run preview",
+    "test": "bun run test:bridge && bun run test:pwa",
+    "test:bridge": "bun test ./bridge",
+    "test:pwa": "cd web && bun run test",
+    "typecheck": "bun run typecheck:bridge && bun run typecheck:pwa",
+    "typecheck:bridge": "bunx tsc --noEmit",
+    "typecheck:pwa": "cd web && bun run typecheck"
   },
   "devDependencies": {
     "@types/bun": "latest",
