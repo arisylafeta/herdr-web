@@ -75,7 +75,11 @@ export async function readableTranscript(agent: string, session: AgentSession | 
 }
 type Entry = Record<string, unknown>;
 type Picture = { mediaType: string; data: string };
-type Parsed = { records: TranscriptRecord[]; texts: Map<string, string>; images: Map<string, Picture[]> };
+type ToolRecord = Extract<TranscriptRecord, { kind: "tool" }>;
+type Parsed = { records: TranscriptRecord[]; texts: Map<string, string>; images: Map<string, Picture[]>; tools: Map<string, ToolRecord> };
+function emptyParsed(): Parsed {
+  return { records: [], texts: new Map(), images: new Map(), tools: new Map() };
+}
 function subject(name: string, args: Record<string, unknown>): string {
   if (["read", "edit", "write"].includes(name)) {
     const path = str(args.path ?? args.file_path ?? args.filePath) || str(args.input).match(/^\[([^#\r\n]+)#[0-9A-Fa-f]{4}\]/m)?.[1] || name;
@@ -94,7 +98,7 @@ function pictures(blocks: unknown[]): Picture[] {
 }
 function refs(images: Picture[]): ImageRef[] { return images.map((image, index) => ({ index, mediaType: image.mediaType, bytes: Buffer.byteLength(image.data, "base64") })); }
 function blocks(message: Entry): unknown[] { return Array.isArray(message.content) ? message.content : typeof message.content === "string" ? [{ type: "text", text: message.content }] : []; }
-export function parseTranscript(entries: Entry[]): Parsed {
+export function parseTranscript(entries: Entry[], entryImages?: Map<string, Picture[]>): Parsed {
   const byId = new Map(entries.map(entry => [str(entry.id), entry]));
   const branch: Entry[] = [], seen = new Set<string>();
   let leaf = entries.at(-1);
@@ -105,10 +109,20 @@ export function parseTranscript(entries: Entry[]): Parsed {
     leaf = byId.get(str(leaf.parentId));
   }
   branch.reverse();
-  const records: TranscriptRecord[] = [], texts = new Map<string, string>(), images = new Map<string, Picture[]>(), tools = new Map<string, Extract<TranscriptRecord, {kind: "tool"}>>();
-  const addImages = (id: string, content: unknown[]) => { const found = pictures(content); if (found.length) images.set(id, found); return found.length ? refs(found) : undefined; };
+  const parsed = emptyParsed();
+  appendRecords(parsed, branch, entryImages);
+  return parsed;
+}
+
+function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string, Picture[]>): void {
+  const { records, texts, images, tools } = parsed;
   for (const entry of branch) {
     const id = str(entry.id), ts = str(entry.timestamp ?? entry.ts), type = str(entry.type);
+    const addImages = (recordId: string, content: unknown[]) => {
+      const found = entryImages?.get(id) ?? pictures(content);
+      if (found.length) images.set(recordId, found);
+      return found.length ? refs(found) : undefined;
+    };
     const variants: Record<string, "compaction" | "reset" | "model" | "mode"> = { compaction: "compaction", reset_boundary: "reset", model_change: "model", mode_change: "mode" };
     const variant = variants[type];
     if (variant) { records.push({ kind: "divider", id, ts, variant, label: str(entry.label) || (variant === "model" ? str(entry.modelId ?? entry.model) : variant), ...(typeof entry.summary === "string" ? { detail: capped(entry.summary, TEXT_CAP).text } : {}) }); continue; }
@@ -149,9 +163,53 @@ export function parseTranscript(entries: Entry[]): Parsed {
       }
     });
   }
-  return { records, texts, images };
 }
-type Cache = { size: number; offset: number; start: number; sessionId: string; entries: Entry[]; parsed: Parsed; revision: string; hash: Hash };
+// Keep branch topology and rendering inputs, not model accounting or request controls.
+// Images live separately so inactive branches remain replayable without retaining base64 in entries.
+function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
+  const compact: Entry = { id: entry.id, parentId: entry.parentId, type: entry.type, timestamp: entry.timestamp ?? entry.ts };
+  const type = str(entry.type);
+  if (["compaction", "reset_boundary", "model_change", "mode_change"].includes(type)) {
+    for (const key of ["label", "modelId", "model"]) if (entry[key] !== undefined) compact[key] = entry[key];
+    if (typeof entry.summary === "string") compact.summary = capped(entry.summary, TEXT_CAP).text;
+    return compact;
+  }
+  const startEvent = type === "tool_execution_start" || (type === "custom" && entry.customType === "tool_execution_start");
+  if (startEvent) {
+    const source = type === "custom" ? object(entry.data) : entry;
+    const start = { toolCallId: source.toolCallId, toolName: source.toolName, args: source.args };
+    if (type === "custom") { compact.customType = "tool_execution_start"; compact.data = start; }
+    else Object.assign(compact, start);
+    return compact;
+  }
+  if (type !== "message" && (type !== "custom_message" || entry.display !== true)) return compact;
+  const source = type === "message" ? object(entry.message) : entry;
+  const role = type === "custom_message" ? "assistant" : str(source.role);
+  if (!["user", "assistant", "toolResult", "tool_result"].includes(role)) return compact;
+  const content = blocks(source);
+  if (role === "user" || role === "toolResult" || role === "tool_result") {
+    const found = pictures(content);
+    if (found.length) images.set(str(entry.id), found);
+  }
+  const message: Entry = { role, content: content.map(value => {
+    const block = object(value), blockType = str(block.type);
+    if (blockType === "text") return { type: blockType, text: block.text };
+    if (blockType === "thinking") return { type: blockType, thinking: block.thinking, text: block.text, redacted: block.redacted };
+    if (blockType === "toolCall" || blockType === "tool_call") return { type: blockType, id: block.id, toolCallId: block.toolCallId, name: block.name, arguments: block.arguments, args: block.args };
+    return { type: blockType };
+  }) };
+  if (typeof source.model === "string") message.model = source.model;
+  if (role === "toolResult" || role === "tool_result") {
+    message.toolCallId = source.toolCallId ?? source.tool_call_id;
+    const details = object(source.details);
+    message.isError = source.isError === true || details.isError === true || details.error !== undefined || (typeof details.exitCode === "number" && details.exitCode !== 0);
+  }
+  if (type === "custom_message") { compact.display = true; compact.content = message.content; compact.model = message.model; }
+  else compact.message = message;
+  return compact;
+}
+
+type Cache = { size: number; offset: number; start: number; sessionId: string; entries: Entry[]; ids: Set<string>; images: Map<string, Picture[]>; parsed: Parsed; revision: string; hash: Hash };
 export class TranscriptStore {
   private readonly cache = new Map<string, Cache>();
   private readonly pending = new Map<string, Promise<Cache>>();
@@ -171,7 +229,7 @@ export class TranscriptStore {
       let cache = this.cache.get(key);
       const start = Math.max(0, info.size - this.fileCap);
       if (!cache || info.size < cache.size || (cache.start === 0 && start > 0) || (cache.start > 0 && info.size !== cache.size)) {
-        cache = { size: 0, offset: start, start, sessionId: ompSessionId, entries: [], parsed: { records: [], texts: new Map(), images: new Map() }, revision: "", hash: createHash("sha256").update(`${key}:${start}`) };
+        cache = { size: 0, offset: start, start, sessionId: ompSessionId, entries: [], ids: new Set(), images: new Map(), parsed: emptyParsed(), revision: "", hash: createHash("sha256").update(`${key}:${start}`) };
       }
       const length = Math.min(info.size - cache.offset, this.fileCap);
       if (length > 0) {
@@ -181,12 +239,28 @@ export class TranscriptStore {
         if (end >= 0) {
           let data = buffer.subarray(0, end + 1);
           if (cache.start > 0 && cache.offset === cache.start) data = data.subarray(data.indexOf(10) + 1);
+          const appended: Entry[] = [];
+          let previousId = str(cache.entries.at(-1)?.id);
+          // Only a fresh, contiguous leaf extension can reuse the active branch's tool index.
+          // Forks, duplicate ids and context boundaries replay the compact history instead.
+          let continuesBranch = cache.entries.length > 0;
           for (const line of data.toString("utf8").split("\n")) {
             if (!line.trim()) continue;
-            try { const entry = object(redactSessionPath(JSON.parse(line), session!.value)); if (typeof entry.id === "string") cache.entries.push(entry); } catch { /* Malformed complete entries are inert and omitted. */ }
+            try {
+              const raw = object(JSON.parse(line));
+              if (typeof raw.id !== "string") continue;
+              const entry = object(redactSessionPath(compactEntry(raw, cache.images), session!.value));
+              const id = str(entry.id);
+              if (str(entry.parentId) !== previousId || cache.ids.has(id) || ["compaction", "reset_boundary"].includes(str(entry.type))) continuesBranch = false;
+              previousId = id;
+              cache.ids.add(id);
+              cache.entries.push(entry);
+              appended.push(entry);
+            } catch { /* Malformed complete entries are inert and omitted. */ }
           }
           cache.offset += end + 1;
-          cache.parsed = parseTranscript(cache.entries);
+          if (continuesBranch) appendRecords(cache.parsed, appended, cache.images);
+          else cache.parsed = parseTranscript(cache.entries, cache.images);
           cache.hash.update(data);
           cache.revision = `"${cache.hash.copy().digest("hex")}"`;
         }

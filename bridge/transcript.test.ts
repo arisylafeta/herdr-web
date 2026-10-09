@@ -127,6 +127,55 @@ describe("omp fixture parser", () => {
     expect(results[2]?.records[0]).toMatchObject({ id: "extra-250", text: "message 250" });
     expect(results[2]?.records.at(-1)).toMatchObject({ id: "extra-649", text: "message 649" });
   });
+  test("single-entry growth matches full parsing across fixtures and branch switches", async () => {
+    for (const name of ["basic-chat", "tool-roundtrip", "running-tool", "image-result", "context-events", "branch", "big-output", "torn-tail"]) {
+      const f = await fixture(name);
+      const source = entries(await Bun.file(f.path).text());
+      await writeFile(f.path, "");
+      const accumulated: Record<string, unknown>[] = [];
+      for (const entry of source) {
+        accumulated.push(entry);
+        await appendFile(f.path, JSON.stringify(entry) + "\n");
+        const response = await f.read(400);
+        const expected = parseTranscript(accumulated);
+        expect(response.records).toEqual(expected.records);
+        for (const [id, text] of expected.texts) {
+          if (Buffer.byteLength(text) <= 1024 * 1024) expect((await f.store.record("default", "omp", f.session, id)).text).toBe(text);
+        }
+        for (const [id, images] of expected.images) {
+          for (const [index, image] of images.entries()) expect((await f.store.image("default", "omp", f.session, id, index)).bytes).toEqual(Buffer.from(image.data, "base64"));
+        }
+      }
+    }
+  });
+  test("linear tool completion updates the existing call card in place", async () => {
+    const f = await fixture("running-tool");
+    const running = (await f.read()).records.find(record => record.id === "call-running");
+    expect(running).toMatchObject({ status: "running" });
+    const completion = { type: "message", id: "completion", parentId: "entry-005", message: { role: "toolResult", toolCallId: "call-running", isError: false, content: [{ type: "text", text: "completed output" }] } };
+    await appendFile(f.path, JSON.stringify(completion) + "\n");
+    const completed = (await f.read()).records.find(record => record.id === "call-running");
+    expect(completed).toBe(running);
+    expect(completed).toMatchObject({ status: "ok", output: { text: "completed output", truncated: false } });
+    const source = entries(await Bun.file(f.path).text());
+    expect((await f.read()).records).toEqual(parseTranscript(source).records);
+  });
+  test("branch replay restores archived images and full text after leaving their branch", async () => {
+    const f = await fixture("image-result");
+    const original = await f.read();
+    const image = await f.store.image("default", "omp", f.session, "call-image", 0);
+    const text = await f.store.record("default", "omp", f.session, "call-image");
+    await appendFile(f.path, JSON.stringify({ type: "message", id: "alternate", parentId: "entry-003", message: { role: "user", content: "alternate branch" } }) + "\n");
+    const alternate = await f.read();
+    expect(alternate.records.some(record => record.id === "call-image")).toBe(false);
+    await expect(f.store.image("default", "omp", f.session, "call-image", 0)).rejects.toThrow("transcript image not found");
+    await appendFile(f.path, JSON.stringify({ type: "message", id: "return", parentId: "entry-006", message: { role: "assistant", content: "returned branch" } }) + "\n");
+    const restored = await f.read();
+    expect(restored.records.slice(0, -1)).toEqual(original.records);
+    expect((await f.store.image("default", "omp", f.session, "call-image", 0)).bytes).toEqual(image.bytes);
+    expect(await f.store.record("default", "omp", f.session, "call-image")).toEqual(text);
+    expect(restored.records).toEqual(parseTranscript(entries(await Bun.file(f.path).text())).records);
+  });
   test("redacts only the exact authoritative path in text and nested args", async () => {
     const f = await fixture("running-tool");
     await appendFile(f.path, JSON.stringify({ type: "message", id: "private-call", parentId: "entry-005", message: { role: "assistant", content: [{ type: "toolCall", id: "private-tool", name: "read", arguments: { path: f.path, nested: [f.path, "/other/file.jsonl"] } }] } }) + "\n");
