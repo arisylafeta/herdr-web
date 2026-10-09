@@ -7,6 +7,7 @@ import type { AgentView, PaneReadResponse } from "../lib/types";
 import type { ImageRef, TranscriptRecord, TranscriptResponse } from "../lib/transcript-types";
 import { isTranscriptNearBottom, transcriptScrollTop, type ScrollMetrics } from "../lib/transcriptFollow";
 import { Markdown } from "./Markdown";
+import { ToolDetails } from "./ToolDetails";
 
 export interface TranscriptViewProps {
   pane: AgentView;
@@ -50,8 +51,7 @@ function ToolCard({ record, expanded, toggle, receiver, paneId, session, childre
       <span className="tool-glyph" aria-hidden="true">{glyph}</span><span className="tool-name">{record.name}</span><span className="tool-subject">{record.subject}</span>
       <span className="tool-status" aria-label={record.status === "running" ? "Running" : record.status === "ok" ? "Completed" : "Failed"}>{record.status === "running" ? <LoaderCircle className="spinner" aria-hidden="true" /> : record.status === "ok" ? "✓" : "!"}</span><ChevronDown className="tool-chevron" aria-hidden="true" />
     </button>
-    {expanded && <div className="tool-body"><pre className="tool-args">{JSON.stringify(record.args, null, 2)}</pre>
-      {output && <pre className="tool-output">{output.text}</pre>}
+    {expanded && <div className="tool-body"><ToolDetails record={record} output={output} />
       {output?.truncated && !full && <button type="button" disabled={fetching} onClick={async () => {
         if (demo) { setFull({ text: demoLongOutput, truncated: false }); return; }
         setFetching(true); setError(null);
@@ -60,7 +60,7 @@ function ToolCard({ record, expanded, toggle, receiver, paneId, session, childre
         catch (failure) { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Could not load full output"); }
         finally { if (!controller.signal.aborted) setFetching(false); }
       }}>{fetching ? "Loading…" : "Load everything"}</button>}
-      {full?.truncated && <p className="transcript-status">Full-record size limit reached; some output is omitted.</p>}
+      {full?.truncated && <p className="transcript-status" role="status">Full-record size limit reached; some output is omitted.</p>}
       {error && <p className="tool-error" role="alert">{error}</p>}
     </div>}{children}
   </section>;
@@ -130,13 +130,17 @@ export function TranscriptView({ pane, data, reconnecting, loading, output, onEa
           if (scroll.current) earlier.current = { scrollTop: scroll.current.scrollTop, scrollHeight: scroll.current.scrollHeight, firstId: data.records[0]?.id };
           onEarlier();
         }}>{loading ? "Loading earlier…" : "Show earlier"}</button>}
-        {data?.hasEarlier && data.records.length >= 400 && <p className="transcript-status">History window limited to the latest 400 records.</p>}
+        {data?.hasEarlier && data.records.length >= 400 && <p className="transcript-status" role="status">History window limited to the latest 400 records.</p>}
         {groups.map(group => <div className={`transcript-group ${group[0].kind === "user" ? "transcript-user" : group[0].kind === "divider" ? "transcript-system" : "transcript-assistant"}`} key={group[0].id}>
           {group.map(record => {
             if (record.kind === "user") return <section key={record.id} data-record-id={record.id}><div className="transcript-role">You</div><div className="transcript-text">{record.text}</div>{images(record.id, record.images)}</section>;
             if (record.kind === "assistant") return <section key={record.id} data-record-id={record.id}><Markdown text={record.text} /></section>;
-            if (record.kind === "tool") return <ToolCard key={record.id} record={record} expanded={expanded.has(record.id)} toggle={() => toggle(record.id)} receiver={receiver} paneId={pane.paneId} session={session} demo={demo}>{images(record.id, record.images)}</ToolCard>;
+            if (record.kind === "tool") return <ToolCard key={`${identity}:${record.id}`} record={record} expanded={expanded.has(record.id)} toggle={() => toggle(record.id)} receiver={receiver} paneId={pane.paneId} session={session} demo={demo}>{images(record.id, record.images)}</ToolCard>;
             if (record.kind === "thinking") return <section key={record.id} className="thought-card" data-record-id={record.id}><button className="thought-header" type="button" disabled={record.redacted} aria-expanded={!record.redacted && expanded.has(record.id)} onClick={() => toggle(record.id)}>✧ {record.redacted ? "Thought (redacted)" : "Thought"}{!record.redacted && <ChevronDown aria-hidden="true" />}</button>{!record.redacted && expanded.has(record.id) && <div className="thought-body">{record.text}</div>}</section>;
+            if (record.variant === "error" || record.variant === "aborted") return <section key={record.id} className={`transcript-failure transcript-failure-${record.variant}`} data-record-id={record.id} role={record.variant === "error" ? "alert" : "status"} aria-label={record.variant === "error" ? "Agent error" : "Agent aborted"}>
+              <header><span aria-hidden="true">{record.variant === "error" ? "!" : "■"}</span><strong>{record.label}</strong></header>
+              {record.detail && <div className="transcript-failure-detail">{record.detail}</div>}
+            </section>;
             return <section key={record.id} className="transcript-divider" data-record-id={record.id}>{record.detail ? <details><summary>{record.label}</summary><div className="transcript-divider-detail"><Markdown text={record.detail} /></div></details> : <span>{record.label}</span>}</section>;
           })}
         </div>)}

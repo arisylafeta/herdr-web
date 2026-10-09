@@ -99,9 +99,14 @@ while visible or working, and slows to six seconds when hidden/idle. Failed read
 previous completed window and show Reconnecting.
 
 The transcript renders completed messages only: no token streaming is simulated. Stable record
-IDs preserve tool/thought expansion as tool results change. Tools start collapsed; full output
-is fetched only on request. Markdown is parsed as GFM, sanitized by DOMPurify, then converted into
-React nodes; code blocks offer Copy and fold beyond 40 lines. Image thumbnails open a modal viewer.
+IDs preserve tool/thought expansion as tool results change within an omp session. Tool resources
+also key by omp `sessionId`, so session replacement aborts old full-record requests and drops
+cached output/errors even when call IDs repeat. Tools start collapsed; full output is fetched
+only on request. Expanded read/write cards show a compact path, edit cards color unified diffs,
+and bash cards separate command from result; unknown tools keep the JSON fallback. Error and
+aborted turns have visible, respectively error/warning-edged rows with uncollapsed inert details.
+Markdown is parsed as GFM, sanitized by DOMPurify, then converted into React nodes; code blocks
+offer Copy and fold beyond 40 lines. Image thumbnails open a modal viewer.
 Following is limited to a 60px bottom threshold, earlier loads preserve the scroll anchor, and
 Jump to latest restores following without stealing a reader's position.
 
@@ -114,8 +119,11 @@ The entire shell uses bundled JetBrains Mono and square, palette-derived surface
 records the installed omp titanium dark and light theme source hex values; semantic surfaces,
 status colors and terminal ANSI colors derive from those palettes. Light/dark/system preferences,
 prepaint bootstrap, theme-color metadata, safe-area padding and reduced-motion support remain.
-`?demo=1` provides all record kinds, live/error tools, approval state, images, long output and
-168 history rows for isolated browser checks without a Herdr connection.
+Contrast tests resolve source-derived sRGB/OKLab mixes and overlays across both themes: secondary
+text meets 4.5:1 and decorative text meets 3:1 on all tested shell/transcript surfaces.
+`?demo=1` provides all record kinds, live/error tools, specialized file/diff/command anatomy,
+failed/aborted turns, approval state, images, long output and 172 history records for isolated
+browser checks without a Herdr connection.
 
 ## Security
 

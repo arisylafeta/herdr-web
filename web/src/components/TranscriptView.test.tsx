@@ -57,6 +57,38 @@ describe("TranscriptView mounted behavior", () => {
     expect(fetchRecord).toHaveBeenCalledTimes(2);
     expect(container.querySelector(".tool-body button")).toBeNull();
   });
+  it("isolates full evidence for a reused call id when the omp session changes", async () => {
+    const { container, props, render, data } = mount([{ ...tool, output: { text: "old preview", truncated: true } }]);
+    vi.spyOn(props.receiver, "transcriptRecord").mockResolvedValue({ recordId: tool.id, text: "old full evidence", truncated: false });
+    click(container.querySelector(".tool-header"));
+    await act(async () => { container.querySelector<HTMLButtonElement>(".tool-body button")?.click(); });
+    render({ data: { ...data, sessionId: "new-session", records: [{ ...tool, output: { text: "new evidence", truncated: false } }] } });
+    click(container.querySelector(".tool-header"));
+    expect(container.querySelector(".tool-output")?.textContent).toBe("new evidence");
+  });
+  it("aborts old-session full reads and discards their late responses", async () => {
+    const { container, props, render, data } = mount([{ ...tool, output: { text: "old preview", truncated: true } }]);
+    const pending = Promise.withResolvers<{ recordId: string; text: string; truncated: boolean }>();
+    const read = vi.spyOn(props.receiver, "transcriptRecord").mockReturnValue(pending.promise);
+    click(container.querySelector(".tool-header"));
+    await act(async () => { container.querySelector<HTMLButtonElement>(".tool-body button")?.click(); });
+    const signal = read.mock.calls[0]?.[3];
+    render({ data: { ...data, sessionId: "new-session", records: [{ ...tool, output: { text: "new evidence", truncated: false } }] } });
+    click(container.querySelector(".tool-header"));
+    await act(async () => pending.resolve({ recordId: tool.id, text: "late old evidence", truncated: false }));
+    expect(container.querySelector(".tool-output")?.textContent).toBe("new evidence");
+    expect(signal?.aborted).toBe(true);
+  });
+  it("clears previous-session fetch errors for a reused call id", async () => {
+    const { container, props, render, data } = mount([{ ...tool, output: { text: "preview", truncated: true } }]);
+    vi.spyOn(props.receiver, "transcriptRecord").mockRejectedValue(new Error("Old session offline"));
+    click(container.querySelector(".tool-header"));
+    await act(async () => { container.querySelector<HTMLButtonElement>(".tool-body button")?.click(); });
+    expect(container.querySelector("[role=alert]")).not.toBeNull();
+    render({ data: { ...data, sessionId: "new-session", records: [{ ...tool, output: { text: "new evidence", truncated: false } }] } });
+    click(container.querySelector(".tool-header"));
+    expect(container.querySelector("[role=alert]")).toBeNull();
+  });
   it("shows approval only while blocked, with the last twelve lines and real keys", () => {
     const lines = Array.from({ length: 16 }, (_, i) => `line ${i}`).join("\n");
     const { container, render, data, props } = mount([], { output: { paneId: "pane", text: `\u001b[31m${lines}\u001b[0m`, truncated: false, revision: 1 } });
@@ -101,7 +133,7 @@ describe("TranscriptView mounted behavior", () => {
     const data: TranscriptResponse = { paneId: "pane", sessionId: "s", revision: "cap", total: 500, records, hasEarlier: true, agentStatus: "idle", truncatedFile: false };
     const { container } = mount(records, { data });
     expect(container.querySelector(".transcript-earlier")).toBeNull();
-    expect(container.textContent).toContain("History window limited to the latest 400 records.");
+    expect(container.querySelector('.transcript-content [role="status"]')).not.toBeNull();
   });
   it("explains the full-record bound instead of offering the same clipped fetch forever", async () => {
     const { container, props } = mount([{ ...tool, output: { text: "preview", truncated: true } }]);
@@ -110,7 +142,15 @@ describe("TranscriptView mounted behavior", () => {
     await act(async () => { container.querySelector<HTMLButtonElement>(".tool-body button")?.click(); });
     expect(container.querySelector(".tool-output")?.textContent).toBe("bounded full record");
     expect(container.querySelector(".tool-body button")).toBeNull();
-    expect(container.querySelector(".tool-body")?.textContent).toContain("Full-record size limit reached");
+    expect(container.querySelector('.tool-body [role="status"]')).not.toBeNull();
+  });
+  it.each(["error", "aborted"] as const)("exposes a %s turn's reason and details without a collapsed disclosure", (variant) => {
+    const { container } = mount([{ kind: "divider", id: "stopped", ts: "now", variant, label: "Turn stopped", detail: "Provider response <script>unsafe()</script>" }]);
+    const row = container.querySelector(`[data-record-id="stopped"][role="${variant === "error" ? "alert" : "status"}"]`);
+    expect(row).not.toBeNull();
+    expect(row?.querySelector("details")).toBeNull();
+    expect(row?.textContent).toContain("Provider response");
+    expect(row?.querySelector("script")).toBeNull();
   });
 });
 

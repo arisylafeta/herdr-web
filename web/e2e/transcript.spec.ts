@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
 const screenshots = "/tmp/omp-mobile-probes/shots-herdr";
+// Demo screenshots are self-contained, including the settings push-capability read.
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/config", route => route.fulfill({ json: { push: false, vapidPublicKey: "" } }));
+});
 for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768, height: 1024, name: "tablet" }, { width: 1440, height: 900, name: "desktop" }]) {
   for (const theme of ["dark", "light"] as const) {
     test(`chat ${theme} ${viewport.name}: disclosures, navigation, and bounded history`, async ({ page }) => {
@@ -25,6 +29,7 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
       await page.screenshot({ path: `${screenshots}/02-tools-collapsed-${suffix}.png` });
       await read.click();
       await expect(page.locator('[data-record-id="read"] .tool-output')).toContainText("BridgeReceiver owns");
+      await expect(page.locator('[data-record-id="read"] [aria-label="File path"]')).toHaveText("web/src/lib/receiver.ts");
       await page.screenshot({ path: `${screenshots}/03-tool-expanded-${suffix}.png` });
       await read.click();
       const thought = page.locator('[data-record-id="thought"] .thought-header');
@@ -32,8 +37,18 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
       await expect(page.locator(".thought-body")).toContainText("receiver seam");
       await page.screenshot({ path: `${screenshots}/04-thought-${suffix}.png` });
       await thought.click();
+      await page.locator('[data-record-id="write"] .tool-header').click();
+      await page.locator('[data-record-id="edit"] .tool-header').click();
+      await expect(page.locator('[data-record-id="edit"] [aria-label="Diff"]')).toBeVisible();
+      await page.locator('[data-record-id="edit"]').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${screenshots}/14-write-edit-${suffix}.png` });
+      await page.locator('[data-record-id="write"] .tool-header').click();
+      await page.locator('[data-record-id="edit"] .tool-header').click();
       const long = page.locator('[data-record-id="test"] .tool-header');
       await long.click();
+      await expect(page.locator('[data-record-id="test"] [aria-label="Command"]')).toHaveText("$ bun run test");
+      await page.locator('[data-record-id="test"]').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${screenshots}/15-command-result-${suffix}.png` });
       await page.getByRole("button", { name: "Load everything", exact: true }).click();
       await expect(page.locator('[data-record-id="test"] .tool-output')).toContainText("PASS 092");
       await long.click();
@@ -41,6 +56,11 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
       await expect(page.locator('[data-record-id="error"] .tool-output')).toContainText("Connection refused");
       await page.screenshot({ path: `${screenshots}/05-error-compaction-${suffix}.png` });
       await page.locator('[data-record-id="error"] .tool-header').click();
+      await page.locator('[data-record-id="provider-error"]').scrollIntoViewIfNeeded();
+      await expect(page.getByRole("alert", { name: "Agent error" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Agent aborted" })).toBeVisible();
+      await expect(page.locator('[data-record-id="provider-error"] .transcript-failure-detail')).toBeVisible();
+      await page.screenshot({ path: `${screenshots}/16-error-aborted-${suffix}.png` });
       await page.locator('[data-record-id="image"]').scrollIntoViewIfNeeded();
       await page.getByRole("button", { name: "View image 1" }).click();
       await expect(page.getByRole("dialog", { name: "Image viewer" })).toBeVisible();
@@ -60,7 +80,7 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
       await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible();
       const before = await page.locator(".transcript-scroll").evaluate(node => ({ height: node.scrollHeight, top: node.scrollTop }));
       await page.getByRole("button", { name: "Show earlier", exact: true }).click();
-      await expect(page.locator('[data-record-id="history-49"]')).toHaveCount(1);
+      await expect(page.locator('.transcript-content [data-record-id]')).toHaveCount(120);
       const after = await page.locator(".transcript-scroll").evaluate(node => ({ height: node.scrollHeight, top: node.scrollTop }));
       expect(Math.abs(after.top - (before.top + after.height - before.height))).toBeLessThan(3);
       await page.getByRole("button", { name: "Jump to latest" }).click();

@@ -2385,3 +2385,16 @@ svg {
 }
 .thought-header[aria-expanded="true"] > svg { transform: rotate(180deg); }
 .transcript-session:has(.approval-card) .transcript-jump { top: .7rem; bottom: auto; }
+
+.transcript-failure {
+  padding: .55rem .65rem;
+  border: 1px solid var(--err-line);
+  border-left: 2px solid var(--err);
+  background: var(--err-soft);
+  color: var(--text);
+  font-size: .82rem;
+}
+.transcript-failure header { display: flex; align-items: center; gap: .5rem; color: var(--err); }
+.transcript-failure-aborted { border-color: var(--warn-line); border-left-color: var(--warn); background: var(--warn-soft); }
+.transcript-failure-aborted header { color: var(--warn); }
+.transcript-failure-detail { margin-top: .35rem; max-height: 45vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
