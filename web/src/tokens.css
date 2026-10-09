@@ -76,8 +76,9 @@
   --line-strong: color-mix(in srgb, var(--o-fg) 26%, var(--o-bg));
   --text: var(--o-fg-bright);
   --body: var(--o-fg);
-  --muted: color-mix(in oklab, var(--o-fg) 62%, var(--o-bg));
-  --faint: color-mix(in oklab, var(--o-fg) 38%, var(--o-bg));
+  /* Secondary text keeps Pi Pocket's hierarchy, with contrast headroom on raised surfaces. */
+  --muted: color-mix(in oklab, var(--o-fg) 88%, var(--o-bg));
+  --faint: color-mix(in oklab, var(--o-fg) 70%, var(--o-bg));
   --accent: var(--o-accent);
   --accent-fill: var(--accent);
   --accent-ink: var(--o-bg);
@@ -175,8 +176,9 @@ html[data-theme="light"] {
   --terminal-ansi-bright-cyan: #1a9cba;
   --terminal-ansi-bright-white: #a5a5a5;
   --line: color-mix(in srgb, var(--o-fg) 15%, var(--o-bg));
-  --muted: color-mix(in oklab, var(--o-fg) 78%, var(--o-bg));
-  --faint: color-mix(in oklab, var(--o-fg) 58%, var(--o-bg));
+  /* Include selected/hovered sidebar overlays over the darker light chrome. */
+  --muted: color-mix(in oklab, var(--o-fg) 82%, var(--o-bg));
+  --faint: color-mix(in oklab, var(--o-fg) 67%, var(--o-bg));
   --scrim: color-mix(in srgb, var(--o-bg-darker) 55%, transparent);
   --warn: color-mix(in oklab, var(--o-yellow) 62%, var(--o-fg));
   --ok: color-mix(in oklab, var(--o-green) 78%, var(--o-fg));
