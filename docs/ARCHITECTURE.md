@@ -64,14 +64,19 @@ Navigation is event-poked: `events.subscribe` accelerates authoritative `session
 ## Omp transcript seam
 
 `GET /api/pane/:id/transcript` returns the active JSONL branch as structured, inert records
-with a revision/ETag, defaulting to the last 60 records (maximum 400). Tool results update their
-call-position record. `/transcript/record/:recordId` expands text to at most 1 MiB;
+with a revision/ETag scoped to agent status and the requested window, defaulting to the last 60
+records (maximum 400). Tool results update their call-position record.
+`/transcript/record/:recordId` expands text to at most 1 MiB;
 `/transcript/image/:recordId/:index` serves supported raster images up to 5 MiB with private
 caching and `nosniff`. All three routes use the existing session selector and read-access guard.
-`sessionId` identifies the omp header session, falling back to file identity for title-only
-headers; the Herdr environment remains the separate `?session=` selector.
+`sessionId` comes from the first `session` entry in the bounded 64 KiB header read, allowing a
+`title` preamble; file identity is the fallback only when no session header is found there.
+The Herdr environment remains the separate `?session=` selector.
 Custom messages appear only when their `display` flag is explicitly true; other custom events
 are housekeeping, except tool-execution starts, which can supply a running tool record.
+Failed/aborted assistant turns emit `error`/`aborted` dividers even without content. Their
+unresolved calls become errors with `interrupted` output. Only the last unresolved call may
+remain running when an explicit execution-start event is the file's leaf and the pane is working.
 
 Herdr's pane session reference stays in the engine's private map; public snapshots expose only
 `transcript:true` after a safe-read probe. The browser cannot choose a file. Reported paths are
@@ -81,12 +86,33 @@ and a valid initial session/title header. The default root is `~/.omp/agent/sess
 `COLLIE_TRANSCRIPT_ROOTS` adds colon-separated absolute roots for custom session directories.
 The exact authoritative session path is replaced by `[session file]` in served strings,
 including nested arguments; unrelated paths remain intact. Contents are never logged.
+Pane processes are trusted for session selection: allowed roots grant access to every owner-owned
+valid transcript within them, not proof that a transcript belongs to that pane. Ancestor-directory
+rename/symlink races are outside the threat model of this single-user host service.
 
-An eight-file LRU cache reads appended complete lines by byte offset, ignoring torn tails and
-resetting after shrink or inode replacement. Parsing is bounded to a 64 MiB tail window;
-`truncatedFile:true` signals that earlier history (including missing ancestors/tool calls) may
-be unavailable. Tool previews retain head and tail within 16 KiB. Cached branches are rebuilt
-when complete entries arrive so fork selection always follows the latest appended leaf.
+An eight-file LRU cache uses a global conservative retained-payload budget of 192 MiB,
+configurable with `COLLIE_TRANSCRIPT_CACHE_MB` (1–4096 MiB). Charges are four times retained
+entry/image serialized bytes plus 256 bytes per entry for indexing/object overhead; this bounds
+cached payload, not exact process RSS. Oversized sessions can be served without being retained.
+At most two distinct file loads parse concurrently; other loads queue before opening a descriptor.
+Parsing is bounded to a 64 MiB tail window; `truncatedFile:true` signals missing earlier history.
+Complete JSONL lines exceeding 8 MiB are skipped as inert. Torn trailing lines are not emitted.
+Tool previews retain head and tail within 16 KiB. Args are capped to 8 KiB of JSON, six nesting
+levels and 256 visited nodes, with explicit `…[truncated N bytes]` string prefixes. Full args are
+not retained or available through record expansion; that route expands output/text only.
+
+Fresh parent-linked leaf extensions reuse records and tool indexes; forks/context boundaries
+replay compact history. Shrinks, inode replacements and same-size metadata changes rebuild.
+Every reuse verifies SHA-256 guards on the first 4 KiB and last 4 KiB of the consumed region
+(shorter files use available bytes). Growth additionally verifies a rolling checksum over the
+entire retained byte window, so an interior rewrite cannot hide behind unchanged samples.
+This uses Bun's non-cryptographic hash, fixed 1 MiB chunks and a reused scratch buffer; no raw
+consumed-file copy is retained. Checksums are generation detectors, not hostile-content authenticity.
+The same open descriptor is re-statted after all header/body reads, parsing and checksum work:
+size, mtime or ctime changes discard the tentative result and retry once; a second unstable
+read returns 503 instead of mixed contents. Changes outside the retained window do not affect its
+records; the start guard still covers the beginning of the file. This is not an atomic snapshot against same-UID
+filesystem attackers, consistent with the single-user-host boundary above.
 
 ## Browser chat view
 

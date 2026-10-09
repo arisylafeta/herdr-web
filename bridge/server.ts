@@ -303,7 +303,7 @@ export function startServer(opts: {
   const worktreeCreateDeduplicator = new WorktreeCreateDeduplicator();
   const actionDeduplicator = new ActionDeduplicator();
   const paneMutations = new PaneMutationQueue();
-  const transcripts = new TranscriptStore(cfg.transcriptRoots);
+  const transcripts = new TranscriptStore(cfg.transcriptRoots, undefined, { cacheBytes: (cfg.transcriptCacheMb ?? 192) * 1024 * 1024 });
   const inspectedWorkspaceRoot = async (
     engine: StateEngine,
     workspaceId: string,
@@ -634,7 +634,7 @@ export function startServer(opts: {
           const session = rt.engine.agentSession(paneId);
           const action = transcriptMatch[2];
           if (action === "record") {
-            const record = await transcripts.record(rt.name, pane.agent, session, decodeURIComponent(transcriptMatch[3]!));
+            const record = await transcripts.record(rt.name, pane.agent, session, decodeURIComponent(transcriptMatch[3]!), pane.status);
             return json(record, req.headers.get("accept-encoding"));
           }
           if (action === "image") {

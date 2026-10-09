@@ -255,6 +255,13 @@ describe("transcript HTTP seam", () => {
       const first = await fetch(endpoint), body = await first.json() as TranscriptResponse;
       expect(first.status).toBe(200); expect(first.headers.get("etag")).toBe(body.revision);
       expect((await fetch(endpoint, { headers: { "if-none-match": body.revision } })).status).toBe(304);
+      const shorter = await fetch(`${endpoint}&limit=1`);
+      const shorterEtag = shorter.headers.get("etag");
+      if (!shorterEtag) throw new Error("missing shorter-window validator");
+      const larger = await fetch(`${endpoint}&limit=2`, { headers: { "if-none-match": shorterEtag } });
+      expect(larger.status).toBe(200);
+      const largerBody = await larger.json() as TranscriptResponse;
+      expect(largerBody.records.map(record => record.kind)).toEqual(["user", "tool"]);
       await appendFile(f.path, JSON.stringify({ type: "message", id: "result", parentId: "entry-005", message: { role: "toolResult", toolCallId: "call-running", isError: true, content: [{ type: "text", text: "failure details" }] } }) + "\n");
       const changed = await fetch(endpoint, { headers: { "if-none-match": body.revision } }); expect(changed.status).toBe(200);
       const next = await changed.json() as TranscriptResponse; expect(next.records.find(record => record.kind === "tool")).toMatchObject({ id: "call-running", status: "error", output: { text: "failure details" } }); expect(next.total).toBe(body.total);
