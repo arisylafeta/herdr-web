@@ -1,3 +1,4 @@
+import type { TranscriptRecord, TranscriptResponse } from "./transcript-types";
 import type { PaneReadResponse, SnapshotResponse } from "./types";
 
 const now = Date.now();
@@ -12,7 +13,8 @@ export const demoSnapshot: SnapshotResponse = {
       workspaceNumber: 1,
       tabId: "w1:t1",
       name: "api-review",
-      agent: "codex",
+      agent: "omp",
+      transcript: true,
       status: "blocked",
       cwd: "/Users/demo/Projects/herdr-control",
       focused: true,
@@ -24,7 +26,8 @@ export const demoSnapshot: SnapshotResponse = {
       workspaceNumber: 2,
       tabId: "w2:t1",
       name: "docs-worker",
-      agent: "claude",
+      agent: "omp",
+      transcript: true,
       status: "working",
       cwd: "/Users/demo/Projects/herdr",
       focused: false,
@@ -157,3 +160,41 @@ export const demoPaneById: Record<string, PaneReadResponse> = Object.fromEntries
     },
   ]),
 );
+
+export const demoImageUrl = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="280" viewBox="0 0 640 280"><rect width="640" height="280" fill="#151820"/><g fill="none" stroke="#00b4ff" stroke-width="2"><rect x="40" y="60" width="150" height="150"/><rect x="240" y="60" width="150" height="150"/><rect x="440" y="60" width="150" height="150"/><path d="M190 135h50m150 0h50"/></g><g fill="#e8ecf4" font-family="monospace" font-size="18" text-anchor="middle"><text x="115" y="140">Browser</text><text x="315" y="140">Bridge</text><text x="515" y="140">omp</text></g></svg>')}`;
+
+const ts = new Date(now).toISOString();
+const earlierRecords: TranscriptRecord[] = Array.from({ length: 156 }, (_, index) =>
+  index % 2 === 0
+    ? { kind: "user", id: `history-${index}`, ts, text: `Review checkpoint ${index / 2 + 1}: keep the receiver boundary explicit.` }
+    : { kind: "assistant", id: `history-${index}`, ts, text: `Checkpoint ${(index + 1) / 2} complete. Session-scoped reads stay isolated; the terminal remains available.` },
+);
+export const demoLongOutput = Array.from({ length: 92 }, (_, index) => `PASS ${String(index + 1).padStart(3, "0")}  receiver boundary / session ${index % 4 + 1} / conditional read`).join("\n");
+export const demoRecords: TranscriptRecord[] = [
+  ...earlierRecords,
+  { kind: "divider", id: "model", ts, variant: "model", label: "Model · omp", detail: "Completed messages only. Tool activity is shown separately." },
+  { kind: "divider", id: "mode", ts, variant: "mode", label: "Mode · coding" },
+  { kind: "divider", id: "reset", ts, variant: "reset", label: "New context", detail: "Continuing the browser transcript review." },
+  { kind: "user", id: "request", ts, text: "Inspect the bridge boundary and make the mobile conversation easier to follow." },
+  { kind: "thinking", id: "thought", ts, text: "I’ll inspect the receiver seam first, keep existing terminal controls intact, then verify the transcript on a narrow viewport." },
+  { kind: "tool", id: "read", ts, name: "read", subject: "web/src/lib/receiver.ts", args: { path: "web/src/lib/receiver.ts" }, status: "ok", output: { text: "BridgeReceiver owns session-scoped URLs, conditional requests, and abort signals.\nNo transport details need to leak into the message components.", truncated: false } },
+  { kind: "tool", id: "test", ts, name: "bash", subject: "bun run test · receiver contract", args: { command: "bun run test" }, status: "ok", output: { text: demoLongOutput.slice(0, 900), truncated: true } },
+  { kind: "tool", id: "error", ts, name: "bash", subject: "Checking optional preview server", args: { command: "curl http://127.0.0.1:19999/health" }, status: "error", output: { text: "Connection refused: the optional preview server is not running.\nThe bridge connection is unaffected.", truncated: false } },
+  { kind: "divider", id: "compaction", ts, variant: "compaction", label: "Context compacted", detail: "Preserved the receiver contract and mobile accessibility decisions." },
+  { kind: "assistant", id: "answer", ts, text: "### Ready for review\nThe conversation now keeps **answers readable** and machine evidence one tap away.\n\n- Session-scoped reads remain inside the receiver.\n- Tool cards retain their identity when work completes.\n- The terminal is always available as a fallback.\n\n```typescript\nconst view = pane.transcript ? \"chat\" : \"terminal\";\n```\n\n| Surface | Behavior |\n| --- | --- |\n| Chat | Completed messages and live tool status |\n| Terminal | Original pane output and controls |" },
+  { kind: "tool", id: "image", ts, name: "render", subject: "Receiver architecture preview", args: { format: "png" }, status: "ok", output: { text: "Browser → bridge → omp; each boundary has one owner.", truncated: false }, images: [{ index: 0, mediaType: "image/png", bytes: 1024 }] },
+  { kind: "tool", id: "running", ts, name: "bash", subject: "Inspecting responsive layout", args: { command: "viewport-check --width 390" }, status: "running" },
+];
+
+const demoSubmitted = new Map<string, TranscriptRecord[]>();
+
+export function appendDemoTranscript(paneId: string, text: string) {
+  const submitted = demoSubmitted.get(paneId) ?? [];
+  submitted.push({ kind: "user", id: `submitted-${submitted.length}`, ts: new Date().toISOString(), text });
+  demoSubmitted.set(paneId, submitted);
+}
+export function demoTranscript(paneId: string, limit: number, status: TranscriptResponse["agentStatus"]): TranscriptResponse {
+  const all = [...demoRecords, ...(demoSubmitted.get(paneId) ?? [])];
+  const records = all.slice(-limit);
+  return { paneId, sessionId: "demo", revision: `demo-${all.length}`, total: all.length, records, hasEarlier: records.length < all.length, agentStatus: status, truncatedFile: false };
+}

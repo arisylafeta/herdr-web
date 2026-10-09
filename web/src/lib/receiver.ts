@@ -1,3 +1,4 @@
+import type { TranscriptResponse } from "./transcript-types";
 import type {
   ActionResponse,
   BridgeConfig,
@@ -64,6 +65,7 @@ export class BridgeReceiver {
   readonly label: string;
   readonly baseUrl: string;
   private readonly paneCache = new Map<string, PaneCacheEntry>();
+  private readonly transcriptCache = new Map<string, { etag: string; data: TranscriptResponse }>();
 
   constructor(
     readonly profile: BridgeProfile,
@@ -111,8 +113,55 @@ export class BridgeReceiver {
     return data;
   }
 
+  async transcript(
+    paneId: string,
+    limit = 60,
+    session?: string,
+    signal?: AbortSignal,
+  ): Promise<TranscriptResponse> {
+    const windowSize = Math.max(1, Math.min(400, Math.floor(limit)));
+    const key = `${session ?? ""}\n${paneId}\n${windowSize}`;
+    const cached = this.transcriptCache.get(key);
+    const timeout = AbortSignal.timeout(GET_TIMEOUT_MS);
+    const response = await this.fetchAdapter(
+      this.endpoint(this.withSession(`/api/pane/${encodeURIComponent(paneId)}/transcript?limit=${windowSize}`, session)),
+      {
+        signal: signal ? combineAbortSignals([signal, timeout]) : timeout,
+        headers: cached ? { "if-none-match": cached.etag } : undefined,
+      },
+    );
+    if (response.status === 304) {
+      if (!cached) throw new ApiError("304 transcript cache miss", 304);
+      return cached.data;
+    }
+    if (!response.ok) throw new ApiError(await responseDetail(response), response.status);
+    const data = (await response.json()) as TranscriptResponse;
+    const etag = response.headers.get("etag");
+    if (etag) {
+      this.transcriptCache.delete(key);
+      this.transcriptCache.set(key, { etag, data });
+      if (this.transcriptCache.size > MAX_PANE_CACHE_ENTRIES) {
+        const oldest = this.transcriptCache.keys().next().value;
+        if (oldest !== undefined) this.transcriptCache.delete(oldest);
+      }
+    }
+    return data;
+  }
+
+  async transcriptRecord(paneId: string, recordId: string, session?: string, signal?: AbortSignal): Promise<{ recordId: string; text: string; truncated: boolean }> {
+    return await this.request(
+      this.withSession(`/api/pane/${encodeURIComponent(paneId)}/transcript/record/${encodeURIComponent(recordId)}`, session),
+      { signal },
+    );
+  }
+
+  transcriptImageUrl(paneId: string, recordId: string, index: number, session?: string): string {
+    return this.endpoint(this.withSession(`/api/pane/${encodeURIComponent(paneId)}/transcript/image/${encodeURIComponent(recordId)}/${index}`, session));
+  }
+
   clearPaneCache(): void {
     this.paneCache.clear();
+    this.transcriptCache.clear();
   }
 
   async reply(
