@@ -1,4 +1,5 @@
 import { normalizedPaneCwd, type HerdrClient } from "./herdr-client.ts";
+import { readableTranscript, defaultTranscriptRoots, type AgentSession } from "./transcript";
 import {
   type AgentStatus,
   type AgentView,
@@ -31,6 +32,7 @@ export class StateEngine {
   private tabs: TabView[] = [];
   private bridge: BridgeStatus = "disconnected";
   private readonly prevStatus = new Map<string, AgentStatus>();
+  private agentSessions = new Map<string, AgentSession>();
   private readonly transitionListeners = new Set<TransitionListener>();
   private readonly removeListeners = new Set<RemoveListener>();
   private readonly updateListeners = new Set<UpdateListener>();
@@ -53,6 +55,7 @@ export class StateEngine {
   constructor(
     private readonly herdr: HerdrClient,
     private readonly pollMs: number,
+    private readonly transcriptRoots = defaultTranscriptRoots(),
   ) {
     this.cadenceMs = pollMs;
   }
@@ -82,6 +85,10 @@ export class StateEngine {
       tabs: this.tabs,
       bridge: this.bridge,
     };
+  }
+
+  agentSession(paneId: string): AgentSession | undefined {
+    return this.agentSessions.get(paneId);
   }
 
   start(): void {
@@ -162,6 +169,16 @@ export class StateEngine {
       if (generation !== this.lifecycleGeneration) return;
       const wsById = new Map(workspaces.map((w) => [w.workspace_id, w]));
       const tabById = new Map(tabs.map((tab) => [tab.tab_id, tab]));
+      const agentSessions = new Map<string, AgentSession>();
+      const readablePanes = new Set<string>();
+      await Promise.all(panes.map(async (pane) => {
+        const session = pane.agent_session;
+        if (pane.agent !== "omp" || !session || (session.agent !== undefined && session.agent !== "omp")) return;
+        agentSessions.set(pane.pane_id, session);
+        if (await readableTranscript(pane.agent, session, this.transcriptRoots)) readablePanes.add(pane.pane_id);
+      }));
+      if (generation !== this.lifecycleGeneration) return;
+      this.agentSessions = agentSessions;
 
       const toView = (
         p: (typeof panes)[number],
@@ -184,6 +201,7 @@ export class StateEngine {
           cwd: normalizedPaneCwd(p),
           focused: p.focused,
           kind,
+          ...(readablePanes.has(p.pane_id) ? { transcript: true } : {}),
         };
       };
 

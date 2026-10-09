@@ -53,6 +53,7 @@ interface WirePane {
   foreground_cwd?: string | null;
   label?: string | null;
   agent?: string | null;
+  agent_session?: { agent?: string; kind: string; value: string; source?: string } | null;
   agent_status: AgentStatus;
   revision: number;
   /** Scroll position (herdr ≥ 0.7.2); optional so older servers that omit it still typecheck. Unused for now. */

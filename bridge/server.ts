@@ -14,6 +14,7 @@ import type { Snooze } from "./snooze.ts";
 import { observeTerminalFrames } from "./terminal-observer.ts";
 import type { UpdateMonitor } from "./update.ts";
 import type { StateEngine } from "./state-engine.ts";
+import { TranscriptStore, TranscriptError } from "./transcript";
 import {
   listWorkspaceFiles,
   readWorkspaceFile,
@@ -83,6 +84,7 @@ const WORKSPACE_FILES_ROUTE = /^\/api\/workspace\/([^/]+)\/files$/;
 const WORKSPACE_FILE_ROUTE = /^\/api\/workspace\/([^/]+)\/file$/;
 const WORKSPACE_GIT_ROUTE = /^\/api\/workspace\/([^/]+)\/git$/;
 const WORKSPACE_DIFF_ROUTE = /^\/api\/workspace\/([^/]+)\/diff$/;
+const TRANSCRIPT_ROUTE = /^\/api\/pane\/([^/]+)\/transcript(?:\/(record|image)\/([^/]+)(?:\/(\d+))?)?$/;
 
 interface LiveSocketData {
   session: string;
@@ -301,6 +303,7 @@ export function startServer(opts: {
   const worktreeCreateDeduplicator = new WorktreeCreateDeduplicator();
   const actionDeduplicator = new ActionDeduplicator();
   const paneMutations = new PaneMutationQueue();
+  const transcripts = new TranscriptStore(cfg.transcriptRoots);
   const inspectedWorkspaceRoot = async (
     engine: StateEngine,
     workspaceId: string,
@@ -615,6 +618,35 @@ export function startServer(opts: {
           deviceAuth(req, cfg).device,
           rt.name,
         );
+      }
+
+      const transcriptMatch = pathname.match(TRANSCRIPT_ROUTE);
+      if (transcriptMatch) {
+        const denied = guard(req, cfg, "read");
+        if (denied) return denied;
+        if (req.method !== "GET") return text("method not allowed", 405);
+        const rt = registry.get(sessionName);
+        if (!rt) return unknownSession();
+        try {
+          const paneId = decodeURIComponent(transcriptMatch[1]!);
+          const pane = rt.engine.current().agents.find(agent => agent.paneId === paneId);
+          if (!pane) return jsonError("pane not found", 404, req.headers.get("accept-encoding"));
+          const session = rt.engine.agentSession(paneId);
+          const action = transcriptMatch[2];
+          if (action === "record") {
+            const record = await transcripts.record(rt.name, pane.agent, session, decodeURIComponent(transcriptMatch[3]!));
+            return json(record, req.headers.get("accept-encoding"));
+          }
+          if (action === "image") {
+            const image = await transcripts.image(rt.name, pane.agent, session, decodeURIComponent(transcriptMatch[3]!), Number(transcriptMatch[4]));
+            return secure(new Response(new Uint8Array(image.bytes), { headers: { "content-type": image.mediaType, "cache-control": "private, max-age=3600" } }));
+          }
+          const data = await transcripts.transcript(paneId, rt.name, pane.agent, session, pane.status, Number(url.searchParams.get("limit") ?? 60));
+          if (notModified(req.headers.get("if-none-match"), data.revision)) return secure(new Response(null, { status: 304, headers: { etag: data.revision, "cache-control": "no-store" } }));
+          return secure(gzipJsonResponse(data, req.headers.get("accept-encoding"), { etag: data.revision }));
+        } catch (error) {
+          return jsonError(error instanceof TranscriptError ? error.message : "transcript unavailable", error instanceof TranscriptError ? error.status : 404, req.headers.get("accept-encoding"));
+        }
       }
 
       // ── Per-pane read / send ─────────────────────────────────────────────

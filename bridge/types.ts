@@ -24,6 +24,8 @@ export interface AgentView {
   focused: boolean;
   /** "agent" for an agent-bearing pane, "shell" for a bare shell. Defaults to "agent" when absent. */
   kind?: "agent" | "shell";
+  /** A safely readable omp transcript is available; its path is never public. */
+  transcript?: boolean;
 }
 
 /** A Herdr workspace ("space") — a project-scoped container of tabs. From `workspace.list`. */

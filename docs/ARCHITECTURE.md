@@ -61,6 +61,33 @@ machine. Additional bridges grant exact-origin CORS only to configured `COLLIE_A
 
 Navigation is event-poked: `events.subscribe` accelerates authoritative `session.snapshot` refreshes. An authorized native client drives the selected terminal through `herdr terminal session control --takeover` at that device's measured columns and rows. The bridge forwards ANSI redraw frames over the WebSocket and sends native `terminal.resize` and `terminal.scroll` commands back through the same controller process. This gives a smaller tablet viewport the same live TUI navigation semantics as an attached Herdr CLI instead of relying on local terminal scrollback. Read-only clients use `herdr terminal session observe`; bounded pane reads remain as startup, older-version, and reconnect recovery.
 
+## Omp transcript seam
+
+`GET /api/pane/:id/transcript` returns the active JSONL branch as structured, inert records
+with a revision/ETag, defaulting to the last 60 records (maximum 400). Tool results update their
+call-position record. `/transcript/record/:recordId` expands text to at most 1 MiB;
+`/transcript/image/:recordId/:index` serves supported raster images up to 5 MiB with private
+caching and `nosniff`. All three routes use the existing session selector and read-access guard.
+`sessionId` identifies the omp header session, falling back to file identity for title-only
+headers; the Herdr environment remains the separate `?session=` selector.
+Custom messages appear only when their `display` flag is explicitly true; other custom events
+are housekeeping, except tool-execution starts, which can supply a running tool record.
+
+Herdr's pane session reference stays in the engine's private map; public snapshots expose only
+`transcript:true` after a safe-read probe. The browser cannot choose a file. Reported paths are
+still untrusted: the bridge requires an omp path reference, `.jsonl`, an owner-owned regular
+non-symlink file, canonical-root containment, `O_NOFOLLOW`, matching opened device/inode,
+and a valid initial session/title header. The default root is `~/.omp/agent/sessions`;
+`COLLIE_TRANSCRIPT_ROOTS` adds colon-separated absolute roots for custom session directories.
+The exact authoritative session path is replaced by `[session file]` in served strings,
+including nested arguments; unrelated paths remain intact. Contents are never logged.
+
+An eight-file LRU cache reads appended complete lines by byte offset, ignoring torn tails and
+resetting after shrink or inode replacement. Parsing is bounded to a 64 MiB tail window;
+`truncatedFile:true` signals that earlier history (including missing ancestors/tool calls) may
+be unavailable. Tool previews retain head and tail within 16 KiB. Cached branches are rebuilt
+when complete entries arrive so fork selection always follows the latest appended leaf.
+
 ## Security
 
 - Run Herdr Web only on a single-user workstation (or inside an owner-isolated VM/container).
