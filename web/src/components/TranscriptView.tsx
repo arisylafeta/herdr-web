@@ -1,0 +1,152 @@
+import { ChevronDown, LoaderCircle, ShieldAlert, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { BridgeReceiver } from "../lib/receiver";
+import { demoImageUrl, demoLongOutput } from "../lib/mock";
+import { parseAnsi } from "../lib/ansi";
+import type { AgentView, PaneReadResponse } from "../lib/types";
+import type { ImageRef, TranscriptRecord, TranscriptResponse } from "../lib/transcript-types";
+import { isTranscriptNearBottom, transcriptScrollTop, type ScrollMetrics } from "../lib/transcriptFollow";
+import { Markdown } from "./Markdown";
+
+export interface TranscriptViewProps {
+  pane: AgentView;
+  data: TranscriptResponse | null;
+  reconnecting: boolean;
+  loading: boolean;
+  output: PaneReadResponse | null;
+  onEarlier: () => void;
+  receiver: BridgeReceiver;
+  session?: string;
+  demo: boolean;
+  readOnly: boolean;
+  onSendKeys: (keys: string[]) => void;
+}
+
+export function groupTranscriptRecords(records: TranscriptRecord[]): TranscriptRecord[][] {
+  const groups: TranscriptRecord[][] = [];
+  for (const record of records) {
+    const assistantSide = record.kind === "assistant" || record.kind === "tool" || record.kind === "thinking";
+    const previous = groups[groups.length - 1];
+    const priorKind = previous?.[0]?.kind;
+    if (assistantSide && previous && (priorKind === "assistant" || priorKind === "tool" || priorKind === "thinking")) previous.push(record);
+    else groups.push([record]);
+  }
+  return groups;
+}
+
+type ToolRecord = Extract<TranscriptRecord, { kind: "tool" }>;
+function ToolCard({ record, expanded, toggle, receiver, paneId, session, children, demo }: {
+  record: ToolRecord; expanded: boolean; toggle: () => void; receiver: BridgeReceiver; paneId: string; session?: string; children: React.ReactNode; demo: boolean;
+}) {
+  const [full, setFull] = useState<{ text: string; truncated: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const abort = useRef<AbortController | null>(null);
+  useEffect(() => () => abort.current?.abort(), []);
+  const output = full ?? record.output;
+  const glyph = /bash|shell|exec/.test(record.name) ? ">_" : /read/.test(record.name) ? "▤" : /write|edit/.test(record.name) ? "✎" : "⚙";
+  return <section className={`tool-card tool-${record.status}`} data-record-id={record.id}>
+    <button className="tool-header" type="button" aria-expanded={expanded} onClick={toggle}>
+      <span className="tool-glyph" aria-hidden="true">{glyph}</span><span className="tool-name">{record.name}</span><span className="tool-subject">{record.subject}</span>
+      <span className="tool-status" aria-label={record.status === "running" ? "Running" : record.status === "ok" ? "Completed" : "Failed"}>{record.status === "running" ? <LoaderCircle className="spinner" aria-hidden="true" /> : record.status === "ok" ? "✓" : "!"}</span><ChevronDown className="tool-chevron" aria-hidden="true" />
+    </button>
+    {expanded && <div className="tool-body"><pre className="tool-args">{JSON.stringify(record.args, null, 2)}</pre>
+      {output && <pre className="tool-output">{output.text}</pre>}
+      {output?.truncated && !full && <button type="button" disabled={fetching} onClick={async () => {
+        if (demo) { setFull({ text: demoLongOutput, truncated: false }); return; }
+        setFetching(true); setError(null);
+        const controller = new AbortController(); abort.current = controller;
+        try { const response = await receiver.transcriptRecord(paneId, record.id, session, controller.signal); if (!controller.signal.aborted) setFull(response); }
+        catch (failure) { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Could not load full output"); }
+        finally { if (!controller.signal.aborted) setFetching(false); }
+      }}>{fetching ? "Loading…" : "Load everything"}</button>}
+      {full?.truncated && <p className="transcript-status">Full-record size limit reached; some output is omitted.</p>}
+      {error && <p className="tool-error" role="alert">{error}</p>}
+    </div>}{children}
+  </section>;
+}
+
+export function TranscriptView({ pane, data, reconnecting, loading, output, onEarlier, receiver, session, demo, readOnly, onSendKeys }: TranscriptViewProps) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const approval = useRef<HTMLPreElement>(null);
+  const following = useRef(true);
+  const earlier = useRef<(Pick<ScrollMetrics, "scrollTop" | "scrollHeight"> & { firstId?: string }) | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [viewer, setViewer] = useState<{ url: string; alt: string; launcher: HTMLButtonElement } | null>(null);
+  const groups = useMemo(() => groupTranscriptRecords(data?.records ?? []), [data?.records]);
+  const identity = `${pane.paneId}:${session ?? ""}:${data?.sessionId ?? ""}`;
+  useLayoutEffect(() => { following.current = true; earlier.current = null; setAtBottom(true); setExpanded(new Set()); setViewer(null); }, [identity]);
+  useLayoutEffect(() => { if (reconnecting) earlier.current = null; }, [reconnecting]);
+  useLayoutEffect(() => {
+    const node = scroll.current;
+    if (!node) return;
+    const anchor = earlier.current;
+    const loadedEarlier = anchor && data?.records[0]?.id !== anchor.firstId;
+    if (anchor && !loadedEarlier) return;
+    node.scrollTop = transcriptScrollTop(node, following.current, loadedEarlier ? anchor : undefined);
+    if (loadedEarlier) earlier.current = null;
+  }, [data, loading, groups, expanded]);
+  useLayoutEffect(() => {
+    const node = content.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (following.current && scroll.current && !earlier.current) scroll.current.scrollTop = Math.max(0, scroll.current.scrollHeight - scroll.current.clientHeight);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [identity]);
+  useEffect(() => {
+    if (!viewer) return;
+    const previous = viewer.launcher;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setViewer(null);
+      if (event.key === "Tab") {
+        event.preventDefault();
+        document.querySelector<HTMLButtonElement>(".image-viewer-close")?.focus();
+      }
+    };
+    document.addEventListener("keydown", close);
+    return () => { document.removeEventListener("keydown", close); previous.focus(); };
+  }, [viewer]);
+  const status = pane.status;
+  const approvalOutput = useMemo(() => parseAnsi(output?.text ?? "").map(segment => segment.text).join("").split("\n").slice(-12).join("\n"), [output?.text]);
+  useLayoutEffect(() => {
+    if (approval.current) approval.current.scrollTop = approval.current.scrollHeight;
+  }, [approvalOutput, status]);
+  const toggle = (id: string) => setExpanded(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const images = (recordId: string, refs?: ImageRef[]) => refs?.length ? <div className="transcript-images">{refs.map(image => {
+    const url = demo ? demoImageUrl : receiver.transcriptImageUrl(pane.paneId, recordId, image.index, session);
+    const alt = `Image ${image.index + 1}`;
+    return <button className="transcript-image" type="button" key={image.index} aria-label={`View ${alt.toLowerCase()}`} onClick={event => setViewer({ url, alt, launcher: event.currentTarget })}><img src={url} alt={alt} loading="lazy" onLoad={() => { if (following.current && scroll.current) scroll.current.scrollTop = Math.max(0, scroll.current.scrollHeight - scroll.current.clientHeight); }} /></button>;
+  })}</div> : null;
+  return <main className="session-main transcript-session">
+    <div className="transcript-scroll" ref={scroll} onScroll={event => {
+      following.current = isTranscriptNearBottom(event.currentTarget); setAtBottom(following.current);
+    }}>
+      <div className="transcript-content" ref={content}>
+        {data?.hasEarlier && data.records.length < 400 && <button className="transcript-earlier" type="button" disabled={loading} onClick={() => {
+          if (scroll.current) earlier.current = { scrollTop: scroll.current.scrollTop, scrollHeight: scroll.current.scrollHeight, firstId: data.records[0]?.id };
+          onEarlier();
+        }}>{loading ? "Loading earlier…" : "Show earlier"}</button>}
+        {data?.hasEarlier && data.records.length >= 400 && <p className="transcript-status">History window limited to the latest 400 records.</p>}
+        {groups.map(group => <div className={`transcript-group ${group[0].kind === "user" ? "transcript-user" : group[0].kind === "divider" ? "transcript-system" : "transcript-assistant"}`} key={group[0].id}>
+          {group.map(record => {
+            if (record.kind === "user") return <section key={record.id} data-record-id={record.id}><div className="transcript-role">You</div><div className="transcript-text">{record.text}</div>{images(record.id, record.images)}</section>;
+            if (record.kind === "assistant") return <section key={record.id} data-record-id={record.id}><Markdown text={record.text} /></section>;
+            if (record.kind === "tool") return <ToolCard key={record.id} record={record} expanded={expanded.has(record.id)} toggle={() => toggle(record.id)} receiver={receiver} paneId={pane.paneId} session={session} demo={demo}>{images(record.id, record.images)}</ToolCard>;
+            if (record.kind === "thinking") return <section key={record.id} className="thought-card" data-record-id={record.id}><button className="thought-header" type="button" disabled={record.redacted} aria-expanded={!record.redacted && expanded.has(record.id)} onClick={() => toggle(record.id)}>✧ {record.redacted ? "Thought (redacted)" : "Thought"}{!record.redacted && <ChevronDown aria-hidden="true" />}</button>{!record.redacted && expanded.has(record.id) && <div className="thought-body">{record.text}</div>}</section>;
+            return <section key={record.id} className="transcript-divider" data-record-id={record.id}>{record.detail ? <details><summary>{record.label}</summary><div className="transcript-divider-detail"><Markdown text={record.detail} /></div></details> : <span>{record.label}</span>}</section>;
+          })}
+        </div>)}
+        {!data?.records.length && <p className="transcript-empty">{loading ? "Loading conversation…" : "No conversation messages yet."}</p>}
+        {data?.truncatedFile && <p className="transcript-status">Earlier session history was omitted from this bounded read.</p>}
+      </div>
+    </div>
+    {!atBottom && <button className="transcript-jump" type="button" onClick={() => { following.current = true; setAtBottom(true); if (scroll.current) scroll.current.scrollTop = Math.max(0, scroll.current.scrollHeight - scroll.current.clientHeight); }}>Jump to latest ↓</button>}
+    {status === "blocked" && <section className="approval-card" aria-label="Agent needs input"><header className="approval-header"><ShieldAlert aria-hidden="true" />Needs input</header><pre className="approval-output" ref={approval}>{approvalOutput || "The agent is waiting for input. Inspect its prompt before responding."}</pre><div className="approval-actions">{["Enter", "Esc", "Up", "Down", "Tab"].map(key => <button type="button" key={key} disabled={readOnly || reconnecting} onClick={() => onSendKeys([key])}>{key}</button>)}</div></section>}
+    <div className="transcript-status" role="status" aria-live="polite">{reconnecting ? "Reconnecting…" : status === "working" ? "Working…" : status === "blocked" ? "Needs input" : status === "done" ? "Done" : status === "idle" ? "Idle" : "Status unknown"}</div>
+    {viewer && <div className="image-viewer" role="dialog" aria-modal="true" aria-label="Image viewer" onClick={() => setViewer(null)}><button className="image-viewer-close" type="button" autoFocus aria-label="Close image viewer" onClick={() => setViewer(null)}><X /></button><img src={viewer.url} alt={viewer.alt} onClick={event => event.stopPropagation()} /></div>}
+  </main>;
+}

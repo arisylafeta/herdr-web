@@ -88,6 +88,35 @@ resetting after shrink or inode replacement. Parsing is bounded to a 64 MiB tail
 be unavailable. Tool previews retain head and tail within 16 KiB. Cached branches are rebuilt
 when complete entries arrive so fork selection always follows the latest appended leaf.
 
+## Browser chat view
+
+Transcript-capable omp panes open in Chat; the topbar switches between Chat and the existing
+terminal mirror. The preference is stored in sessionStorage by bridge profile, Herdr environment,
+and pane. Shell and non-transcript panes keep the terminal path. The browser receiver owns scoped
+transcript URLs and ETag validators, isolating each history window; `useTranscript` opens the latest
+60 records, adds 60 with Show earlier (up to the route's 400-record cap), polls every 1.2 seconds
+while visible or working, and slows to six seconds when hidden/idle. Failed reads preserve the
+previous completed window and show Reconnecting.
+
+The transcript renders completed messages only: no token streaming is simulated. Stable record
+IDs preserve tool/thought expansion as tool results change. Tools start collapsed; full output
+is fetched only on request. Markdown is parsed as GFM, sanitized by DOMPurify, then converted into
+React nodes; code blocks offer Copy and fold beyond 40 lines. Image thumbnails open a modal viewer.
+Following is limited to a 60px bottom threshold, earlier loads preserve the scroll anchor, and
+Jump to latest restores following without stealing a reader's position.
+
+Blocked panes expose an always-visible warning card with the last twelve ANSI-stripped pane
+output lines, scrolled to the prompt, and Enter/Esc/Up/Down/Tab controls. The composer stays outside
+the conversation scroller, grows up to 40vh, and retains the original reply/upload/key chain.
+Stop still sends Esc. No steer/follow-up mode is advertised.
+
+The entire shell uses bundled JetBrains Mono and square, palette-derived surfaces. `tokens.css`
+records the installed omp titanium dark and light theme source hex values; semantic surfaces,
+status colors and terminal ANSI colors derive from those palettes. Light/dark/system preferences,
+prepaint bootstrap, theme-color metadata, safe-area padding and reduced-motion support remain.
+`?demo=1` provides all record kinds, live/error tools, approval state, images, long output and
+168 history rows for isolated browser checks without a Herdr connection.
+
 ## Security
 
 - Run Herdr Web only on a single-user workstation (or inside an owner-isolated VM/container).

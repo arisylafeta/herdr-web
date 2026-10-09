@@ -28,7 +28,7 @@ it("retains the previous completed window while reconnecting, then refreshes too
 });
 it("aborts the old pane request and opens each pane at its latest sixty rows", async () => {
   const receiver = new BridgeReceiver({ id: "test", label: "Test", baseUrl: "https://test.example" });
-  const read = vi.spyOn(receiver, "transcript").mockImplementation(async (id, limit) => demoTranscript(id, limit, "idle"));
+  const read = vi.spyOn(receiver, "transcript").mockImplementation(async (id, limit = 60) => demoTranscript(id, limit, "idle"));
   function Probe({ pane }: { pane: AgentView }) {
     const result = useTranscript(receiver, "one", pane, true, false);
     return <button onClick={result.showEarlier}>{result.data?.paneId}:{result.data?.records.length}</button>;

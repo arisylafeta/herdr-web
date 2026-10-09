@@ -1,17 +1,14 @@
 import {
   ArrowUp,
-  Bot,
-  ChevronDown,
   Command,
   ImagePlus,
   Keyboard,
-  LockOpen,
   Paperclip,
   Square,
   TerminalSquare,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import type { AgentView, TabView } from "../lib/types";
 
 interface ComposerProps {
@@ -42,6 +39,7 @@ export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly
   const [keysOpen, setKeysOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contextId = `${bridgeId}\n${session ?? ""}\n${pane?.paneId ?? ""}`;
   const contextIdRef = useRef(contextId);
   contextIdRef.current = contextId;
@@ -52,6 +50,18 @@ export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly
     setAttachments([]);
     setKeysOpen(false);
   }, [contextId]);
+
+  useLayoutEffect(() => {
+    const resize = () => {
+      const node = textareaRef.current;
+      if (!node) return;
+      node.style.height = "auto";
+      node.style.height = `${Math.min(node.scrollHeight, window.innerHeight * .4)}px`;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [value, contextId]);
 
   const send = async () => {
     const targetContextId = contextId;
@@ -64,7 +74,7 @@ export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
       event.preventDefault();
       void send();
     }
@@ -99,12 +109,14 @@ export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly
         )}
 
         <textarea
+          ref={textareaRef}
+          enterKeyHint="enter"
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={readOnly ? "This device has read-only access" : pane ? "Reply to this pane…" : "Select a pane to send a message"}
           disabled={disabled}
-          rows={3}
+          rows={1}
           aria-label="Reply to pane"
         />
 
@@ -122,27 +134,16 @@ export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly
                 <span>Stop</span>
               </button>
             ) : (
-              <button className="composer-control model-control" disabled={!pane}>
+              <span className="composer-control model-control" aria-label="Current agent">
                 <span className="agent-mini-mark">{pane?.agent === "shell" ? ">_" : pane?.agent.slice(0, 1).toUpperCase()}</span>
                 <span>{pane?.agent ?? "Agent"}</span>
-                <ChevronDown />
-              </button>
+              </span>
             )}
-            <span className="composer-divider" />
-            <button className="composer-control compact-hide" disabled={!pane}>
+            <span className="composer-divider compact-hide" />
+            <span className="composer-control compact-hide">
               <TerminalSquare />
               <span>{tab?.label ?? "Pane"}</span>
-            </button>
-            <span className="composer-divider compact-hide" />
-            <button className="composer-control compact-hide" disabled={!pane}>
-              <Bot />
-              <span>Build</span>
-            </button>
-            <span className="composer-divider compact-hide" />
-            <button className="composer-control compact-hide" disabled={!pane}>
-              <LockOpen />
-              <span>Full access</span>
-            </button>
+            </span>
           </div>
 
           <div className="composer-actions">
