@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
 import { createHash, type Hash } from "node:crypto";
 import type { AgentStatus } from "./types";
-import type { ImageRef, TranscriptRecord, TranscriptResponse } from "./transcript-types";
+import type { ImageRef, TranscriptRecord, TranscriptResponse, WorkerRow } from "./transcript-types";
 import { nativeCustomRecord, nativeResultRecords } from "./transcript-native";
 import { deriveTranscriptStatus } from "./transcript-status";
 import { readTranscriptChildren, type ChildProjection } from "./transcript-children";
@@ -237,7 +237,7 @@ function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string
       parsed.interrupted.delete(tool.id);
       parsed.unresolved.delete(tool.id);
       tool.endedTs = ts; tool.images = addImages(tool.id, content);
-      const nativeRecords = nativeResultRecords(tool.name, details, tool.id, ts);
+      const nativeRecords = tool.status === "error" && tool.name === "todo" ? [] : nativeResultRecords(tool.name, details, tool.id, ts);
       records.push(...nativeRecords);
       for (const record of nativeRecords) if (record.kind === "todo") parsed.todos.set(id, { record, fingerprint: JSON.stringify(details.phases) });
       continue;
@@ -332,6 +332,7 @@ function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
   if (typeof source.provider === "string") message.provider = source.provider;
   if (source.usage) message.usage = boundedArgs(source.usage);
   if (source.contextSnapshot) message.contextSnapshot = boundedArgs(source.contextSnapshot);
+  if (role === "assistant" && typeof source.stopReason === "string") message.stopReason = prefixText(source.stopReason, 64);
   if (role === "assistant" && (source.stopReason === "error" || source.stopReason === "aborted")) {
     message.stopReason = str(source.stopReason);
     message.errorMessage = capped(str(source.errorMessage), TEXT_CAP).text;
@@ -393,6 +394,23 @@ async function regionChecksum(handle: FileHandle, start: number, end: number, se
     if (filled < length) break;
   }
   return { checksum, fullSeed, fullOffset };
+}
+
+function mergeWorker(wall: WorkerRow, child: WorkerRow): WorkerRow {
+  const newer = (incoming?: string, saved?: string): boolean => incoming !== undefined && (saved === undefined || Date.parse(incoming) >= Date.parse(saved));
+  const defined = Object.fromEntries(Object.entries(child).filter(([, value]) => value !== undefined));
+  const merged: WorkerRow = { ...wall, ...(newer(child.observedAt, wall.observedAt) ? defined : {}), id: child.id, handle: child.handle, parentId: child.parentId };
+  for (const counter of ["turns", "queued"] as const) {
+    const stamp = counter === "turns" ? "turnsObservedAt" : "queuedObservedAt";
+    if (child[counter] !== undefined && newer(child[stamp], wall[stamp])) {
+      merged[counter] = child[counter];
+      merged[stamp] = child[stamp];
+    } else {
+      merged[counter] = wall[counter];
+      merged[stamp] = wall[stamp];
+    }
+  }
+  return merged;
 }
 
 export class TranscriptStore {
@@ -560,10 +578,30 @@ export class TranscriptStore {
       deriveTranscriptStatus(cache.parsed.branch, agentStatus, new Date(cache.mtimeMs).toISOString(), cwd),
       this.children(agentSession!.value, cache),
     ]);
+    const latestTodo = cache.parsed.records.findLast(record => record.kind === "todo");
+    if (latestTodo?.kind === "todo") status.todo = { id: latestTodo.id, ts: latestTodo.ts, phases: latestTodo.phases, visibility: latestTodo.visibility ?? "visible" };
     const latestWall = cache.parsed.records.findLast(record => record.kind === "vibe");
-    const workers = new Map((latestWall?.kind === "vibe" ? latestWall.workers : []).map(row => [row.id, { ...row, ...(Date.now() - cache.mtimeMs > 120_000 && row.state === "running" ? { state: "idle" as const } : {}) }]));
-    for (const worker of owned.workers) workers.set(worker.id, worker);
-    if (workers.size) status.workers = [...workers.values()].slice(0, 64);
+    const wall = (latestWall?.kind === "vibe" ? latestWall.workers : []).map(row => ({ ...row, ...(Date.now() - cache.mtimeMs > 120_000 && row.state === "running" ? { state: "idle" as const } : {}) }));
+    const matched = new Set<number>();
+    const workers = owned.workers.map(child => {
+      const exact = wall.flatMap((row, index) => row.id === child.id ? [index] : []);
+      const byHandle = wall.flatMap((row, index) => (row.handle ?? row.id) === child.handle ? [index] : []);
+      const uniqueChild = child.handle !== undefined && owned.children.filter(row => row.handle === child.handle).length === 1;
+      const index = exact.length === 1 ? exact[0] : uniqueChild && byHandle.length === 1 ? byHandle[0] : undefined;
+      if (index === undefined || matched.has(index)) return child;
+      matched.add(index);
+      return mergeWorker(wall[index]!, child);
+    });
+    for (const child of owned.children) {
+      if (owned.workers.some(worker => worker.id === child.id)) continue;
+      const candidates = wall.flatMap((row, index) => (row.id === child.id || (row.handle ?? row.id) === child.handle) && !matched.has(index) ? [index] : []);
+      if (candidates.length !== 1 || owned.children.filter(row => row.handle === child.handle).length !== 1) continue;
+      const index = candidates[0]!;
+      matched.add(index);
+      workers.push({ ...wall[index]!, id: child.id, handle: child.handle, parentId: child.parentId });
+    }
+    workers.push(...wall.filter((_, index) => !matched.has(index)));
+    if (workers.length) status.workers = workers.slice(0, 64);
     if (owned.childUpdatedAt) status.freshness.childUpdatedAt = owned.childUpdatedAt;
     const projection: TranscriptRecord[] = owned.children.length ? [{ kind: "subagents", id: `${cache.sessionId}:children`, ts: owned.childUpdatedAt ?? status.freshness.fileUpdatedAt, children: owned.children }] : [];
     const allRecords = projection.length ? cache.parsed.records.concat(projection) : cache.parsed.records, total = allRecords.length;
