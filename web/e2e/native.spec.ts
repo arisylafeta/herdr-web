@@ -18,6 +18,7 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
     await page.screenshot({ path: `${shots}/${theme}-${viewport.name}-vibe.png` });
     await page.locator(".work-details-row").click();
     await expect(page.getByRole("dialog", { name: "Work details" })).toContainText("Waiting for the owner's decision");
+    await page.locator(".work-sheet .subagent-tree summary").filter({ hasText: "ScopeReview" }).click();
     await page.screenshot({ path: `${shots}/${theme}-${viewport.name}-work.png` });
     await page.keyboard.press("Escape");
     await expect(page.locator(".work-details-row")).toBeFocused();
@@ -42,4 +43,20 @@ test("old bridge, pressure levels, narrow reduced motion and short viewport", as
   await page.goto("/?demo=1&pane=w2:p1"); await page.setViewportSize({ width: 390, height: 500 });
   await expect(page.locator(".native-status-row")).not.toBeVisible();
   await page.screenshot({ path: `${shots}/short-viewport.png` });
+});
+test("operation acknowledgements, timeout, deep worker evidence and unknown context", async ({ page }) => {
+  await page.route("**/api/config", route => route.fulfill({ json: { push: false } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?demo=1&pane=w2:p1");
+  for (const id of ["vibe-spawn", "vibe-send", "vibe-steer", "vibe-timeout", "vibe-kill", "interrupted"]) {
+    const row = page.locator(`[data-record-id="${id}"]`);
+    await row.locator(".tool-header").click();
+    await row.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${shots}/operation-${id}.png` });
+    await row.locator(".tool-header").click();
+  }
+  await page.goto("/?demo=1&pane=w2:p1&context=unknown");
+  await expect(page.locator(".native-status-row")).toContainText("Context ?");
+  await page.locator(".native-status-row").click();
+  await page.screenshot({ path: `${shots}/unknown-context.png` });
 });

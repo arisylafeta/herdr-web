@@ -9,6 +9,8 @@ export function WorkSheet({ id, title, close, children }: { id: string; title: s
     const launcher = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const keydown = (event: KeyboardEvent) => {
+      const sheets = document.querySelectorAll(".work-sheet");
+      if (sheets.item(sheets.length - 1) !== dialog.current) return;
       if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); onClose.current(); }
       if (event.key === "Tab") {
         const controls = [...(dialog.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input, [tabindex="0"]') ?? [])];

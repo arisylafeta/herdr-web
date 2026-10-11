@@ -19,3 +19,11 @@ it("opens status with focus, labels inference and closes Escape before runtime c
 it("ticks only active current turns and clears clock on settlement", () => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-11T00:00:10Z")); const node = mount(<LiveActivityBar status={{ ...status, turnStartedAt: "2026-10-11T00:00:00Z" }} paneStatus="working" onStop={vi.fn()} readOnly={false} />); expect(node.textContent).toContain("~10s"); act(() => vi.advanceTimersByTime(2000)); expect(node.textContent).toContain("~12s"); act(() => root?.render(<LiveActivityBar status={status} paneStatus="idle" onStop={vi.fn()} readOnly={false} />)); expect(node.textContent).toBe(""); expect(vi.getTimerCount()).toBe(0); });
 it("keeps settled turns separate from reusable idle and running follow-up", () => { const node = mount(<VibeCard scope="v" record={{ kind: "vibe", id: "v", ts: "now", op: "wait", workers: [{ id: "reuse", state: "idle", turns: 2, queued: 0 }, { id: "followup", state: "running", turns: 3, queued: 1, elapsedMs: 5000 }], wait: { settled: 1, stillRunning: 1, timedOut: false, waiting: false } }} />); expect(node.textContent).toContain("Reusable worker · not a completed task"); expect(node.textContent).toContain("1 settled · 1 still running at observation"); expect(node.querySelector(".spinner")).toBeNull(); });
 it("includes abandoned in closed todo count without treating blocked as closed", () => { expect(todoCounts([{ name: "Phase", tasks: [{ content: "a", status: "abandoned" }, { content: "b", status: "completed" }, { content: "c", status: "blocked" }] }])).toEqual({ total: 3, closed: 2, blocked: 1 }); });
+it("freezes historical running worker snapshots while the page clock advances", () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-11T00:00:10Z"));
+  const node = mount(<VibeCard scope="historical" record={{ kind: "vibe", id: "v", ts: "now", op: "list", workers: [{ id: "old", state: "running", turns: 1, queued: 0, elapsedMs: 5000, turnStartedAt: "2026-10-11T00:00:00Z" }] }} />);
+  expect(node.textContent).toContain("5s (observed)");
+  act(() => vi.advanceTimersByTime(120000));
+  expect(node.textContent).toContain("5s (observed)");
+  expect(vi.getTimerCount()).toBe(0);
+});

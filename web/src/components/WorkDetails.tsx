@@ -12,6 +12,18 @@ export function WorkDetails({ data, id }: { data: TranscriptResponse; id: string
   const workers = data.status?.workers ?? [];
   const phases = todo?.kind === "todo" && todo.visibility !== "dismissed" ? todo.phases : [];
   const counts = todoCounts(phases);
-  if (!workers.length && !phases.length && !agents) return null;
-  return <><button type="button" className="work-details-row" aria-expanded={open} aria-controls={id} onClick={() => setOpen(true)}><span>Workers {workers.length || (agents?.kind === "subagents" ? agents.children.length : 0)} observed{counts.total ? ` · Todo ${counts.closed}/${counts.total}` : ""}</span><span aria-hidden="true">⌄</span></button>{open && <WorkSheet id={id} title="Work details" close={() => setOpen(false)}><p className="evidence-note">Disk-backed observations · not a live registry</p>{workers.length > 0 && <section><h3>Workers</h3><WorkerRows workers={workers} scope={id} /></section>}{agents?.kind === "subagents" && <section><h3>Subagents</h3><SubagentTree agents={agents.children} /></section>}{phases.length > 0 && <section><h3>Todo · {counts.closed}/{counts.total} closed</h3><TodoPanel phases={phases} /></section>}{data.status && <div className="folded-status"><StatusBar status={data.status} id={`${id}-status`} /></div>}</WorkSheet>}</>;
+  const hasWork = Boolean(workers.length || phases.length || agents);
+  if (!hasWork && !data.status) return null;
+  return <>
+    <button type="button" className={`work-details-row${hasWork ? "" : " status-only"}`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(true)}>
+      <span>{hasWork ? `Workers ${workers.length || (agents?.kind === "subagents" ? agents.children.length : 0)} observed${counts.total ? ` · Todo ${counts.closed}/${counts.total}` : ""}` : "Session details"}</span><span aria-hidden="true">⌄</span>
+    </button>
+    {open && <WorkSheet id={id} title="Work details" close={() => setOpen(false)}>
+      <p className="evidence-note">Disk-backed observations · not a live registry</p>
+      {workers.length > 0 && <section><h3>Workers</h3><WorkerRows workers={workers} scope={id} /></section>}
+      {agents?.kind === "subagents" && <section><h3>Subagents</h3><SubagentTree agents={agents.children} /></section>}
+      {phases.length > 0 && <section><h3>Todo · {counts.closed}/{counts.total} closed</h3><TodoPanel phases={phases} /></section>}
+      {data.status && <div className="folded-status"><StatusBar status={data.status} id={`${id}-status`} /></div>}
+    </WorkSheet>}
+  </>;
 }

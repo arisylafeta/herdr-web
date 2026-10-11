@@ -1,10 +1,10 @@
 import type { AgentStatus } from "./types";
 
 export type ImageRef = { index: number; mediaType: string; bytes: number };
-export type WorkerRow = { id: string; cli?: "good" | "fast"; state: "starting" | "running" | "idle" | "dead"; turns: number; queued: number; elapsedMs?: number; model?: string; lastActivity?: string; currentTool?: string; outputTail?: string[]; observedAt?: string };
+export type WorkerRow = { id: string; cli?: "good" | "fast"; state: "starting" | "running" | "idle" | "dead"; turns: number; queued: number; elapsedMs?: number; model?: string; lastActivity?: string; currentTool?: string; outputTail?: string[]; observedAt?: string; prompt?: string; trace?: string[]; turnStartedAt?: string };
 export type TodoStatus = "pending" | "active" | "completed" | "abandoned" | "blocked";
-export type TodoPhase = { name: string; tasks: { content: string; status: TodoStatus; blocker?: string }[] };
-export type SubagentRow = { id: string; agentType: string; description: string; status: string; nesting: number; parentId?: string; toolCount?: number };
+export type TodoPhase = { name: string; tasks: { content: string; status: TodoStatus; blocker?: string; details?: string; notes?: string }[] };
+export type SubagentRow = { id: string; agentType: string; description: string; status: string; nesting: number; parentId?: string; toolCount?: number; model?: string; currentTool?: string };
 export type TranscriptStatus = {
   model?: { id: string; name: string; provider: string }; thinking?: string; serviceTier?: string; mode?: string; turnStartedAt?: string;
   activity?: { label: string; toolName?: string; startedAt: string }; cwd?: string;
@@ -17,7 +17,7 @@ export type TranscriptRecord =
   | { kind: "assistant"; id: string; ts: string; text: string; model?: string }
   | { kind: "thinking"; id: string; ts: string; text: string; redacted?: boolean }
   | { kind: "tool"; id: string; ts: string; name: string; subject: string; summary?: string; args: Record<string, unknown>; status: "running" | "ok" | "error"; output?: { text: string; truncated: boolean }; images?: ImageRef[]; endedTs?: string }
-  | { kind: "vibe"; id: string; ts: string; callId?: string; op: string; workers: WorkerRow[]; ack?: { id: string; mode?: "turn" | "steered" | "queued" }; wait?: { settled: number; stillRunning: number; timedOut: boolean; waiting: boolean } }
+  | { kind: "vibe"; id: string; ts: string; callId?: string; op: string; workers: WorkerRow[]; ack?: { id: string; mode?: "turn" | "steered" | "queued"; jobId?: string; cli?: "good" | "fast" }; killed?: { id: string; cancelledTurn: boolean }; wait?: { settled: number; stillRunning: number; timedOut: boolean; waiting: boolean } }
   | { kind: "irc"; id: string; ts: string; from: string; to?: string; body: string; replyTo?: string; auto?: boolean }
   | { kind: "todo"; id: string; ts: string; phases: TodoPhase[]; visibility?: "visible" | "dismissed" }
   | { kind: "subagents"; id: string; ts: string; callId?: string; children: SubagentRow[] }
