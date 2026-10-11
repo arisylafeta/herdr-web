@@ -1,18 +1,16 @@
 import {
   ChevronDown,
   Menu,
-  MoreHorizontal,
   Network,
-  PanelRight,
   Plus,
   RefreshCw,
-  SquareTerminal,
   X,
 } from "lucide-react";
 import type { AgentView, TabView } from "../lib/types";
 import type { BridgeProfile } from "../lib/receiver";
 import { STATUS_LABEL } from "../lib/types";
 import { StatusDot } from "./StatusDot";
+import type { PaneView } from "../lib/paneView";
 
 interface TopbarProps {
   pane: AgentView | null;
@@ -21,6 +19,8 @@ interface TopbarProps {
   bridgeId: string;
   bridgeConnected: boolean;
   readOnly: boolean;
+  view?: PaneView;
+  onViewChange?: (view: PaneView) => void;
   onBridgeChange: (bridgeId: string) => void;
   onOpenSidebar: () => void;
   onNewTab: () => void;
@@ -35,6 +35,8 @@ export function Topbar({
   bridgeId,
   bridgeConnected,
   readOnly,
+  view,
+  onViewChange,
   onBridgeChange,
   onOpenSidebar,
   onNewTab,
@@ -62,6 +64,12 @@ export function Topbar({
       </div>
 
       <div className="topbar-actions">
+        {pane?.transcript && (
+          <div className="view-toggle" aria-label="Pane view">
+            <button aria-pressed={view === "chat"} onClick={() => onViewChange?.("chat")}>Chat</button>
+            <button aria-pressed={view === "terminal"} onClick={() => onViewChange?.("terminal")}>Terminal</button>
+          </div>
+        )}
         {bridges.length > 1 && (
           <label className="device-select" title="Switch Herdr device">
             <Network />
@@ -87,19 +95,10 @@ export function Topbar({
         <button className="icon-button" onClick={onRefresh} title="Refresh device">
           <RefreshCw />
         </button>
-        <button className="icon-button desktop-only" title="Open terminal controls">
-          <SquareTerminal />
-        </button>
-        <button className="icon-button desktop-only" title="Toggle details panel">
-          <PanelRight />
-        </button>
         <div className={`connection-indicator${bridgeConnected ? " is-connected" : ""}`} title={bridgeConnected ? "Herdr bridge connected" : "Herdr bridge disconnected"}>
           <span />
         </div>
         <div className="topbar-more-wrap">
-          <button className="icon-button" title="Pane actions">
-            <MoreHorizontal />
-          </button>
           <button
             className="terminate-button"
             onClick={onClosePane}

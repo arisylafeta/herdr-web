@@ -13,6 +13,7 @@ export interface AgentView {
   cwd: string;
   focused: boolean;
   kind?: "agent" | "shell";
+  transcript?: boolean;
 }
 
 export interface WorkspaceView {

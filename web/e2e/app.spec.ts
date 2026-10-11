@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { demoPaneById, demoSnapshot } from "../src/lib/mock";
+import { demoPaneById, demoSnapshot as richDemoSnapshot } from "../src/lib/mock";
+import type { SnapshotResponse } from "../src/lib/types";
+
+// These transport fixtures exercise the terminal-only bridge contract.
+const demoSnapshot: SnapshotResponse = { ...richDemoSnapshot, agents: richDemoSnapshot.agents.map((pane) => ({ ...pane, transcript: false })) };
 
 test("desktop control plane is interactive and stable", async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -18,6 +22,7 @@ test("desktop control plane is interactive and stable", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/?demo=1");
   await expect(page.getByText("Herdr", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
   await expect(page.getByText("Terminal output")).toBeVisible();
   await expect(page.getByText("Preview transport.")).toBeVisible();
 
@@ -48,6 +53,7 @@ test("desktop control plane is interactive and stable", async ({ page }) => {
 test("mobile layout exposes the complete primary workflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?demo=1");
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
   await expect(page.getByText("Terminal output")).toBeVisible();
 
   await page.getByTitle("Open sidebar").click();

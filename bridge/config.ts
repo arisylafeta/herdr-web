@@ -163,6 +163,10 @@ export interface Config {
    * already-discovered session; they never build a filesystem path.
    */
   multiSession: boolean;
+  /** Additional absolute omp session roots (colon-separated environment value). */
+  transcriptRoots?: string[];
+  /** Conservative retained transcript-cache budget in MiB. */
+  transcriptCacheMb?: number;
 }
 
 export function loadConfig(): Config {
@@ -208,5 +212,7 @@ export function loadConfig(): Config {
     stateDir,
     servePwa: envBool("COLLIE_SERVE_PWA", true),
     multiSession: envBool("COLLIE_MULTI_SESSION", true),
+    transcriptRoots: [join(homedir(), ".omp/agent/sessions"), ...(process.env.COLLIE_TRANSCRIPT_ROOTS ?? "").split(":").filter((root) => root.startsWith("/"))],
+    transcriptCacheMb: envInt("COLLIE_TRANSCRIPT_CACHE_MB", 192, { min: 1, max: 4096 }),
   };
 }

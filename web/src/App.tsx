@@ -12,6 +12,9 @@ import { SessionView } from "./components/SessionView";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { useHerdr } from "./hooks/useHerdr";
+import { useTranscript } from "./hooks/useTranscript";
+import { usePaneView } from "./lib/paneView";
+import { TranscriptView } from "./components/TranscriptView";
 import { useBridges } from "./hooks/useBridges";
 import { usePushSetup } from "./hooks/usePush";
 import { useTheme } from "./lib/theme";
@@ -22,9 +25,11 @@ export default function App() {
   usePushSetup(bridges.defaultReceiver);
   const theme = useTheme();
   const herdr = useHerdr(bridges.receiver);
+  const paneView = usePaneView(bridges.activeId, herdr.session, herdr.selectedPane);
+  const transcript = useTranscript(bridges.receiver, herdr.session, herdr.selectedPane, paneView.value === "chat", herdr.mode === "demo");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(() =>
-    window.matchMedia("(max-width: 820px)").matches,
+    window.matchMedia("(max-width: 959px)").matches,
   );
   const [commandOpen, setCommandOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
@@ -43,7 +48,7 @@ export default function App() {
   const update = herdr.snapshot.update;
 
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 820px)");
+    const query = window.matchMedia("(max-width: 959px)");
     const sync = () => setCompactSidebar(query.matches);
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
@@ -116,6 +121,8 @@ export default function App() {
           bridgeId={bridges.activeId}
           bridgeConnected={herdr.snapshot.bridge === "connected"}
           readOnly={readOnly}
+          view={paneView.value}
+          onViewChange={paneView.setView}
           onBridgeChange={bridges.select}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
           onNewTab={() => openNewTab(herdr.selectedPane?.workspaceId)}
@@ -146,13 +153,30 @@ export default function App() {
           </div>
         ) : null}
 
-        <SessionView
-          pane={herdr.selectedPane}
-          output={herdr.paneOutput}
-          loading={herdr.paneLoading}
-          bridgeConnected={herdr.snapshot.bridge === "connected"}
-          mode={herdr.mode}
-        />
+        {herdr.selectedPane?.transcript && paneView.value === "chat" ? (
+          <TranscriptView
+            key={`${bridges.activeId}\n${herdr.session ?? ""}\n${herdr.selectedPane.paneId}`}
+            pane={herdr.selectedPane}
+            data={transcript.data}
+            loading={transcript.loading}
+            reconnecting={transcript.reconnecting}
+            output={herdr.paneOutput}
+            receiver={bridges.receiver}
+            session={herdr.session}
+            demo={herdr.mode === "demo"}
+            readOnly={readOnly}
+            onEarlier={transcript.showEarlier}
+            onSendKeys={(keys) => void herdr.sendKeys(keys)}
+          />
+        ) : (
+          <SessionView
+            pane={herdr.selectedPane}
+            output={herdr.paneOutput}
+            loading={herdr.paneLoading}
+            bridgeConnected={herdr.snapshot.bridge === "connected"}
+            mode={herdr.mode}
+          />
+        )}
 
         <Composer
           pane={herdr.selectedPane}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, type BridgeReceiver } from "../lib/receiver";
-import { demoPaneById, demoSnapshot } from "../lib/mock";
+import { appendDemoTranscript, demoPaneById, demoSnapshot } from "../lib/mock";
 import {
   demoModeFromSearch,
   modeAfterSnapshotFailure,
@@ -306,6 +306,7 @@ export function useHerdr(receiver: BridgeReceiver) {
     async (text: string) => {
       if (!selectedPaneId || !text.trim()) return false;
       if (mode === "demo") {
+        appendDemoTranscript(selectedPaneId, text.trim());
         const current = demoOutput.current[selectedPaneId] ?? {
           paneId: selectedPaneId,
           text: "",

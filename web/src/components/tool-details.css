@@ -1,0 +1,27 @@
+.tool-file-path {
+  display: block;
+  min-width: 0;
+  color: var(--body);
+  font-family: var(--mono);
+  font-size: .78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-command {
+  max-height: 45vh;
+  margin: 0;
+  padding: .45rem .6rem;
+  overflow: auto;
+  background: var(--card);
+  color: var(--body);
+  font-family: var(--mono);
+  font-size: .78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-diff-added { color: var(--ok); }
+.tool-diff-removed { color: var(--err); }

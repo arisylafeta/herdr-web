@@ -32,7 +32,7 @@ export function useTheme(): {
       document.documentElement.dataset.theme = theme;
       document.querySelector('meta[name="theme-color"]')?.setAttribute(
         "content",
-        theme === "dark" ? "#111212" : "#f7f8f6",
+        theme === "dark" ? "#151820" : "#f8f8f8",
       );
     };
     apply();

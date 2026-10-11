@@ -125,7 +125,7 @@ updateTimer?.unref();
 // snooze, notify-prefs, the audit log and the uploads dir stay process-global (shared here).
 const makeSession: SessionFactory = (name, socketPath, isPrimary) => {
   const herdr = new HerdrClient(socketPath);
-  const engine = new StateEngine(herdr, cfg.pollMs);
+  const engine = new StateEngine(herdr, cfg.pollMs, cfg.transcriptRoots);
 
   // Event-poked polling: a long-lived events.subscribe stream pokes an immediate re-poll on any herd
   // change, and while it's healthy the interval relaxes to the safety-net cadence. Events are ONLY a
