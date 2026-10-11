@@ -208,16 +208,26 @@ positions. Worker lifecycle labels describe observations: idle means reusable, n
 historical running snapshots do not animate or tick. Call-linked Vibe/task details share the original
 tool disclosure, without a duplicate card, while preserving arguments/output. Unknown kinds use a fallback.
 
+Pinned Todo uses `status.todo`, the canonical complete-branch plan and HUD visibility, independently
+of transcript pagination; older bridges fall back to their available chronological todo snapshots.
+Worker/subagent keys and disclosures use opaque identities, while `handle` is display-only.
+Unknown turn/queue counters render as an em dash; zero is displayed only when supplied by evidence.
+Subagent details distinguish their child/task/lifecycle source and mark the child transcript
+unavailable only when the bridge explicitly reports `childAvailable: false`.
+
 Chat reserves a compact dock above the composer: current pane activity and the existing Esc Stop,
 one combined Work details disclosure, and one model/mode/context status disclosure. Status opens a
 focus-trapped read-only sheet with folder Copy, git file counts and disk freshness. In short
-viewports telemetry folds into Work details. Sheets consume Escape before runtime controls and
-restore launcher focus. Disclosure identities include bridge, Herdr session, pane and omp session;
-polling preserves expansion, while changing ownership resets it.
+viewports telemetry folds into Work details. Tab containment includes visible enabled summaries,
+form controls and nonnegative tabindex targets, excluding hidden/closed details and folded controls.
+Only the topmost sheet consumes Escape before runtime controls and restores launcher focus.
+Disclosure identities include bridge, Herdr session, pane and omp session; polling preserves
+expansion, while changing ownership resets it.
 
 Context pressure uses the earliest percentage or absolute threshold: 50%/150k, 70%/270k,
 90%/500k. Semantic tokens supply both themes and accessible pressure labels. The current-turn
-clock ticks locally once per second only when active and visible; its disk origin is estimated.
+clock ticks locally once per second only when active and visible; callback-ref attachment observes
+timestamps arriving after initial loading. Its disk origin remains estimated.
 No native observer, streaming wall, retry countdown, relay delivery or exact context is promised.
 Demo transport supports `context=ok|warn|high|critical|unknown` and `oldBridge=1` compatibility scenarios.
 

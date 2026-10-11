@@ -4,9 +4,9 @@ const glyphs: Record<WorkerRow["state"], string> = { running: "◷", starting: "
 export function WorkerRows({ workers, scope }: { workers: WorkerRow[]; scope: string }) {
   return <ul className="worker-list">{workers.map(worker => <li key={worker.id}>
     <details className={`worker-row state-${worker.state}`}>
-      <summary id={`${scope}-${encodeURIComponent(worker.id)}`}><span aria-hidden="true">{glyphs[worker.state]}</span><strong>{worker.id}</strong><span>{worker.state}</span></summary>
+      <summary id={`${scope}-${encodeURIComponent(worker.id)}`}><span aria-hidden="true">{glyphs[worker.state]}</span><strong>{worker.handle ?? worker.id}</strong><span>{worker.state}</span></summary>
       <div className="worker-evidence">
-        <p>{worker.cli && <span title={worker.cli === "fast" ? "Low-latency / mechanical" : "Stronger / hard work"}>⟨{worker.cli}⟩ · </span>}{worker.turns}t{worker.queued ? ` +${worker.queued}q` : ""}{worker.elapsedMs !== undefined ? ` · ${elapsedLabel(worker.elapsedMs)} (observed)` : ""}</p>
+        <p>{worker.cli && <span title={worker.cli === "fast" ? "Low-latency / mechanical" : "Stronger / hard work"}>⟨{worker.cli}⟩ · </span>}<span aria-label={worker.turns === undefined ? "Turns unknown" : `${worker.turns} observed turns`} title={worker.turnsObservedAt}>{worker.turns ?? "—"}t</span>{" · "}<span aria-label={worker.queued === undefined ? "Queue unknown" : `${worker.queued} observed queued turns`} title={worker.queuedObservedAt}>{worker.queued ?? "—"}q</span>{worker.elapsedMs !== undefined ? ` · ${elapsedLabel(worker.elapsedMs)} (observed)` : ""}</p>
         {worker.model && <p>{worker.model}</p>}
         {worker.state === "idle" && <p>Reusable worker · not a completed task</p>}
         {worker.prompt && <p>Prompt: {worker.prompt}</p>}

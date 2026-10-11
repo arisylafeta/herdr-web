@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 export function useElapsed(startedAt: string | undefined, active: boolean, frozenMs = 0) {
-  const element = useRef<HTMLSpanElement>(null);
+  const [element, setElement] = useState<HTMLSpanElement | null>(null);
   const [now, setNow] = useState(Date.now);
   const [visible, setVisible] = useState(true);
   useEffect(() => {
-    if (!element.current || typeof IntersectionObserver === "undefined") return;
+    if (!element || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(entries => setVisible(entries.some(entry => entry.isIntersecting)));
-    observer.observe(element.current); return () => observer.disconnect();
-  }, []);
+    observer.observe(element); return () => observer.disconnect();
+  }, [element]);
   useEffect(() => {
     if (!active || !startedAt || !visible) return;
     let timer: number | undefined;
@@ -16,5 +16,5 @@ export function useElapsed(startedAt: string | undefined, active: boolean, froze
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", sync); };
   }, [active, startedAt, visible]);
   const start = startedAt ? Date.parse(startedAt) : NaN;
-  return { element, elapsed: active && Number.isFinite(start) ? Math.max(0, now - start) : frozenMs };
+  return { element: setElement, elapsed: active && Number.isFinite(start) ? Math.max(0, now - start) : frozenMs };
 }

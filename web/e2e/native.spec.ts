@@ -18,7 +18,14 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
     await page.screenshot({ path: `${shots}/${theme}-${viewport.name}-vibe.png` });
     await page.locator(".work-details-row").click();
     await expect(page.getByRole("dialog", { name: "Work details" })).toContainText("Waiting for the owner's decision");
+    const lastSummary = page.locator(".work-sheet .todo-panel summary").last();
+    await lastSummary.focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Close Work details", exact: true })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(lastSummary).toBeFocused();
     await page.locator(".work-sheet .subagent-tree summary").filter({ hasText: "ScopeReview" }).click();
+    await expect(page.locator('.work-sheet [data-evidence-source="child"]')).toBeVisible();
     await page.screenshot({ path: `${shots}/${theme}-${viewport.name}-work.png` });
     await page.keyboard.press("Escape");
     await expect(page.locator(".work-details-row")).toBeFocused();
@@ -43,6 +50,17 @@ test("old bridge, pressure levels, narrow reduced motion and short viewport", as
   await page.goto("/?demo=1&pane=w2:p1"); await page.setViewportSize({ width: 390, height: 500 });
   await expect(page.locator(".native-status-row")).not.toBeVisible();
   await page.screenshot({ path: `${shots}/short-viewport.png` });
+  await page.locator(".work-details-row").click();
+  await page.locator('.work-sheet .worker-row summary').filter({ hasText: "booting" }).click();
+  await expect(page.locator('.work-sheet [aria-label="Queue unknown"]')).toBeVisible();
+  await page.screenshot({ path: `${shots}/review-unknown-counters.png` });
+  await page.locator(".folded-status .native-status-row").click();
+  await expect(page.getByRole("dialog", { name: "Session status" })).toBeVisible();
+  await page.screenshot({ path: `${shots}/review-nested-status.png` });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Session status" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Work details" })).toBeVisible();
+  await page.keyboard.press("Escape");
 });
 test("operation acknowledgements, timeout, deep worker evidence and unknown context", async ({ page }) => {
   await page.route("**/api/config", route => route.fulfill({ json: { push: false } }));

@@ -1,15 +1,17 @@
 import type { AgentStatus } from "./types";
 
 export type ImageRef = { index: number; mediaType: string; bytes: number };
-export type WorkerRow = { id: string; cli?: "good" | "fast"; state: "starting" | "running" | "idle" | "dead"; turns: number; queued: number; elapsedMs?: number; model?: string; lastActivity?: string; currentTool?: string; outputTail?: string[]; observedAt?: string; prompt?: string; trace?: string[]; turnStartedAt?: string };
+export type WorkerRow = { id: string; handle?: string; parentId?: string; cli?: "good" | "fast"; state: "starting" | "running" | "idle" | "dead"; turns?: number; queued?: number; turnsObservedAt?: string; queuedObservedAt?: string; elapsedMs?: number; model?: string; lastActivity?: string; currentTool?: string; outputTail?: string[]; observedAt?: string; prompt?: string; trace?: string[]; turnStartedAt?: string };
 export type TodoStatus = "pending" | "active" | "completed" | "abandoned" | "blocked";
 export type TodoPhase = { name: string; tasks: { content: string; status: TodoStatus; blocker?: string; details?: string; notes?: string }[] };
-export type SubagentRow = { id: string; agentType: string; description: string; status: string; nesting: number; parentId?: string; toolCount?: number; model?: string; currentTool?: string };
+export type TodoSnapshot = { id: string; ts: string; phases: TodoPhase[]; visibility: "visible" | "dismissed" };
+export type SubagentRow = { id: string; handle?: string; agentType: string; description: string; status: string; nesting: number; parentId?: string; toolCount?: number; model?: string; currentTool?: string; source?: "child" | "task-result" | "task-call" | "lifecycle"; childAvailable?: boolean };
 export type TranscriptStatus = {
   model?: { id: string; name: string; provider: string }; thinking?: string; serviceTier?: string; mode?: string; turnStartedAt?: string;
   activity?: { label: string; toolName?: string; startedAt: string }; cwd?: string;
   git?: { branch: string; staged: number; unstaged: number; untracked: number; ahead?: number; behind?: number; dirty: boolean };
   context?: { tokens: number; window: number; percent: number; level: "ok" | "warn" | "high" | "critical"; source: "estimate" };
+  todo?: TodoSnapshot;
   workers?: WorkerRow[]; freshness: { fileUpdatedAt: string; childUpdatedAt?: string };
 };
 export type TranscriptRecord =

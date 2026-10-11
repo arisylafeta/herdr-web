@@ -7,10 +7,10 @@ import { StatusBar } from "./StatusBar";
 import { WorkSheet } from "./WorkSheet";
 export function WorkDetails({ data, id }: { data: TranscriptResponse; id: string }) {
   const [open, setOpen] = useState(false);
-  const todo = [...data.records].reverse().find(record => record.kind === "todo");
+  const todo = data.status?.todo ?? [...data.records].reverse().find(record => record.kind === "todo");
   const agents = [...data.records].reverse().find(record => record.kind === "subagents");
   const workers = data.status?.workers ?? [];
-  const phases = todo?.kind === "todo" && todo.visibility !== "dismissed" ? todo.phases : [];
+  const phases = todo && "phases" in todo && todo.visibility !== "dismissed" ? todo.phases : [];
   const counts = todoCounts(phases);
   const hasWork = Boolean(workers.length || phases.length || agents);
   if (!hasWork && !data.status) return null;
@@ -21,7 +21,7 @@ export function WorkDetails({ data, id }: { data: TranscriptResponse; id: string
     {open && <WorkSheet id={id} title="Work details" close={() => setOpen(false)}>
       <p className="evidence-note">Disk-backed observations · not a live registry</p>
       {workers.length > 0 && <section><h3>Workers</h3><WorkerRows workers={workers} scope={id} /></section>}
-      {agents?.kind === "subagents" && <section><h3>Subagents</h3><SubagentTree agents={agents.children} /></section>}
+      {agents?.kind === "subagents" && <section><h3>Subagents</h3><SubagentTree agents={agents.children} scope={id} /></section>}
       {phases.length > 0 && <section><h3>Todo · {counts.closed}/{counts.total} closed</h3><TodoPanel phases={phases} /></section>}
       {data.status && <div className="folded-status"><StatusBar status={data.status} id={`${id}-status`} /></div>}
     </WorkSheet>}
