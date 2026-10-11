@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { lstat, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join, parse, sep } from "node:path";
 import type { AgentStatus } from "./types";
 import type { TranscriptStatus } from "./transcript-types";
 import { readWorkspaceGitStatus } from "./workspace-inspection";
@@ -13,15 +13,15 @@ const number = (value: unknown): number | undefined => typeof value === "number"
 const timestamp = (value: unknown): string | undefined => typeof value === "string" && value.length <= 64 && Number.isFinite(Date.parse(value)) ? value : undefined;
 const live = (status: AgentStatus): boolean => status === "working" || status === "blocked";
 
-// Only owner-controlled, non-symlink paths beneath the bridge user's home are inspected.
+// Cwd may be outside home; reject symlinks and require an owner-controlled leaf.
 async function ownedPath(path: string): Promise<boolean> {
-  const home = homedir(), rel = relative(home, path);
-  if (!isAbsolute(path) || path.length > 4096 || path.split(sep).includes("..") || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return false;
-  let current = home;
-  for (const part of ["", ...rel.split(sep).filter(Boolean)]) {
+  if (!isAbsolute(path) || path.length > 4096 || path.split(sep).includes("..")) return false;
+  let current = parse(path).root;
+  for (const part of ["", ...path.slice(current.length).split(sep).filter(Boolean)]) {
     if (part) current = join(current, part);
     const info = await lstat(current).catch(() => undefined);
-    if (!info || info.isSymbolicLink() || info.uid !== process.getuid?.()) return false;
+    const uid = process.getuid?.();
+    if (!info || info.isSymbolicLink() || (current === path ? info.uid !== uid : info.uid !== uid && info.uid !== 0)) return false;
   }
   return await realpath(path).catch(() => "") === path;
 }
@@ -55,9 +55,11 @@ async function modelMetadata(provider: string, id: string): Promise<Metadata | u
     `).get(provider, id);
     if (row) value = { name: text(row.name).replace(/^Claude /, "") || id, window: number(row.window) };
   } catch { /* Missing, locked or incompatible cache means unknown metadata. */ }
-  finally { db?.close(); }
-  if (modelCache.size >= 128) modelCache.delete(modelCache.keys().next().value!);
-  modelCache.set(key, { at: Date.now(), value });
+  finally {
+    db?.close();
+    if (modelCache.size >= 128) modelCache.delete(modelCache.keys().next().value!);
+    modelCache.set(key, { at: Date.now(), value });
+  }
   return value;
 }
 
@@ -115,7 +117,8 @@ export function estimateTranscriptContext(entries: Entry[], window: number): Tra
       const prompt = number(snapshot.promptTokens) ?? (input === undefined ? undefined : input + (number(usage.cacheRead) ?? 0) + (number(usage.cacheWrite) ?? 0));
       if (prompt !== undefined && prompt > 0) {
         tokens = Math.max(0, prompt - (number(snapshot.historyRewriteTokensRemoved) ?? 0));
-        continue;
+        const output = number(usage.output);
+        if (output !== undefined) { tokens += output; continue; }
       }
     }
     if (tokens !== undefined) {
@@ -181,7 +184,7 @@ export async function deriveTranscriptStatus(entries: Entry[], agentStatus: Agen
     if (metadata?.window) status.context = estimateTranscriptContext(entries, metadata.window);
   }
   if (live(agentStatus)) {
-    status.turnStartedAt = turnStartedAt;
+    if (agentStatus === "working") status.turnStartedAt = turnStartedAt;
     status.activity = [...starts.values()].at(-1);
   }
   const effectiveCwd = text(cwd, 4096) || headerCwd;

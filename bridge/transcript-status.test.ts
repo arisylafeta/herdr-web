@@ -46,10 +46,12 @@ describe("disk transcript status", () => {
       { type: "custom", customType: "tool_execution_start", data: { toolCallId: "a", toolName: "ask", startedAt: ts } },
     ], "blocked", ts);
     expect(retry.activity?.toolName).toBe("ask");
+    expect(retry.turnStartedAt).toBeUndefined();
   });
 
-  test("estimates prompt rather than total usage, honors corrections, and drops stale compaction anchors", () => {
-    expect(estimateTranscriptContext([assistant({ input: 100, cacheRead: 200, cacheWrite: 50, output: 900, totalTokens: 1250 })], 1000)?.tokens).toBe(350);
+  test("estimates corrected prompt plus assistant output, and drops stale compaction anchors", () => {
+    expect(estimateTranscriptContext([assistant({ input: 100, cacheRead: 200, cacheWrite: 50, output: 900, totalTokens: 9999 })], 2000)?.tokens).toBe(1250);
+    expect(estimateTranscriptContext([assistant({ input: 100 }, { content: [{ type: "text", text: "12345678" }] })], 1000)?.tokens).toBe(102);
     expect(estimateTranscriptContext([
       assistant({ input: 10 }, { contextSnapshot: { promptTokens: 600, historyRewriteTokensRemoved: 100 } }),
       { type: "message", message: { role: "toolResult", content: [{ type: "text", text: "12345678" }] } },
@@ -71,6 +73,7 @@ describe("disk transcript status", () => {
 
   test("actual read-only model cache and nonblocking git inspection in an isolated home", async () => {
     const home = await mkdtemp(join(tmpdir(), "herdr-status-"));
+    const repo = await mkdtemp(join(tmpdir(), "herdr-status-repo-"));
     try {
       const dir = join(home, ".omp", "agent");
       await mkdir(dir, { recursive: true });
@@ -79,8 +82,6 @@ describe("disk transcript status", () => {
       db.run("CREATE TABLE model_cache(provider_id TEXT PRIMARY KEY, models TEXT)");
       db.query("INSERT INTO model_cache VALUES (?, ?)").run("fixture", JSON.stringify([{ id: "sonnet", name: "Claude Sonnet fixture", contextWindow: 1000000 }]));
       db.close();
-      const repo = join(home, "repo");
-      await mkdir(repo);
       await Bun.$`git init -q ${repo}`.quiet();
       await writeFile(join(repo, "tracked.txt"), "initial\n");
       await Bun.$`git -C ${repo} add tracked.txt`.quiet();
@@ -117,6 +118,9 @@ describe("disk transcript status", () => {
       const rejected = JSON.parse(await new Response(blocked.stdout).text()) as TranscriptStatus;
       expect(rejected.model?.name).toBe("sonnet");
       expect(await blocked.exited).toBe(0);
-    } finally { await rm(home, { recursive: true, force: true }); }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(repo, { recursive: true, force: true });
+    }
   });
 });
