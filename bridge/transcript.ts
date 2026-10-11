@@ -6,6 +6,7 @@ import { extname, isAbsolute, join, relative, sep } from "node:path";
 import { createHash, type Hash } from "node:crypto";
 import type { AgentStatus } from "./types";
 import type { ImageRef, TranscriptRecord, TranscriptResponse } from "./transcript-types";
+import { nativeCustomRecord, nativeResultRecords } from "./transcript-native";
 
 export type AgentSession = { kind: string; value: string; source?: string };
 export function defaultTranscriptRoots(): string[] {
@@ -40,10 +41,10 @@ function prefixText(text: string, maxBytes: number): string {
   return head + `…[truncated ${total - Buffer.byteLength(head)} bytes]`;
 }
 
-function boundedArgs(value: unknown): Record<string, unknown> {
-  let nodes = 0, remaining = ARGS_CAP - 1024;
+function boundedArgs(value: unknown, cap = ARGS_CAP, nodeCap = 256, depthCap = MAX_DEPTH): Record<string, unknown> {
+  let nodes = 0, remaining = cap - 1024;
   const visit = (input: unknown, depth: number): unknown => {
-    if (++nodes > 256 || depth >= MAX_DEPTH) return "…[truncated depth/nodes]";
+    if (++nodes > nodeCap || depth >= depthCap) return "…[truncated depth/nodes]";
     if (typeof input === "string") {
       const result = prefixText(input, Math.max(64, remaining));
       remaining -= Buffer.byteLength(result);
@@ -53,7 +54,7 @@ function boundedArgs(value: unknown): Record<string, unknown> {
     if (Array.isArray(input)) {
       const result: unknown[] = [];
       for (const item of input) {
-        if (nodes >= 256 || remaining <= 0) { result.push("…[truncated elements]"); break; }
+        if (nodes >= nodeCap || remaining <= 0) { result.push("…[truncated elements]"); break; }
         result.push(visit(item, depth + 1));
       }
       return result;
@@ -61,7 +62,7 @@ function boundedArgs(value: unknown): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const key in input) {
       if (!Object.hasOwn(input, key)) continue;
-      if (nodes >= 256 || remaining <= 0) { result.truncated = "…[truncated properties]"; break; }
+      if (nodes >= nodeCap || remaining <= 0) { result.truncated = "…[truncated properties]"; break; }
       const boundedKey = prefixText(key, 128);
       remaining -= Buffer.byteLength(boundedKey) + 4;
       Object.defineProperty(result, boundedKey, { value: visit(object(input)[key], depth + 1), enumerable: true, configurable: true, writable: true });
@@ -70,7 +71,7 @@ function boundedArgs(value: unknown): Record<string, unknown> {
   };
   const result = object(visit(object(value), 0));
   const serialized = JSON.stringify(result);
-  return Buffer.byteLength(serialized) <= ARGS_CAP ? result : { truncated: prefixText(serialized, (ARGS_CAP - 128) / 2) };
+  return Buffer.byteLength(serialized) <= cap ? result : { truncated: prefixText(serialized, (cap - 128) / 2) };
 }
 function capped(text: string, cap: number): { text: string; truncated: boolean } {
   const bytes = Buffer.from(text);
@@ -131,9 +132,9 @@ export async function readableTranscript(agent: string, session: AgentSession | 
 type Entry = Record<string, unknown>;
 type Picture = { mediaType: string; data: string };
 type ToolRecord = Extract<TranscriptRecord, { kind: "tool" }>;
-type Parsed = { records: TranscriptRecord[]; texts: Map<string, string>; images: Map<string, Picture[]>; tools: Map<string, ToolRecord>; interrupted: Set<string>; unresolved: Set<string>; liveTailTool?: string };
+type Parsed = { branch: Entry[]; records: TranscriptRecord[]; texts: Map<string, string>; images: Map<string, Picture[]>; tools: Map<string, ToolRecord>; todos: Map<string, { record: Extract<TranscriptRecord, { kind: "todo" }>; fingerprint: string }>; interrupted: Set<string>; unresolved: Set<string>; liveTailTool?: string };
 function emptyParsed(): Parsed {
-  return { records: [], texts: new Map(), images: new Map(), tools: new Map(), interrupted: new Set(), unresolved: new Set() };
+  return { branch: [], records: [], texts: new Map(), images: new Map(), tools: new Map(), todos: new Map(), interrupted: new Set(), unresolved: new Set() };
 }
 
 function liveInterruptedTool(parsed: Parsed, status: AgentStatus): string | undefined {
@@ -160,7 +161,7 @@ function pictures(blocks: unknown[]): Picture[] {
 }
 function refs(images: Picture[]): ImageRef[] { return images.map((image, index) => ({ index, mediaType: image.mediaType, bytes: Buffer.byteLength(image.data, "base64") })); }
 function blocks(message: Entry): unknown[] { return Array.isArray(message.content) ? message.content : typeof message.content === "string" ? [{ type: "text", text: message.content }] : []; }
-export function parseTranscript(entries: Entry[], entryImages?: Map<string, Picture[]>): Parsed {
+export function activeTranscriptBranch(entries: Entry[]): Entry[] {
   const byId = new Map(entries.map(entry => [str(entry.id), entry]));
   const branch: Entry[] = [], seen = new Set<string>();
   let leaf = entries.at(-1);
@@ -171,21 +172,50 @@ export function parseTranscript(entries: Entry[], entryImages?: Map<string, Pict
     leaf = byId.get(str(leaf.parentId));
   }
   branch.reverse();
+  return branch;
+}
+export function parseTranscript(entries: Entry[], entryImages?: Map<string, Picture[]>): Parsed {
   const parsed = emptyParsed();
-  appendRecords(parsed, branch, entryImages);
+  appendRecords(parsed, activeTranscriptBranch(entries), entryImages);
   return parsed;
 }
 
 function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string, Picture[]>): void {
   const { records, texts, images, tools } = parsed;
   for (const entry of branch) {
+    parsed.branch.push(entry);
     const id = str(entry.id), ts = str(entry.timestamp ?? entry.ts), type = str(entry.type);
     parsed.liveTailTool = undefined;
+    if (type === "custom_message" && entry.customType === "async-result" && entry.display === true) {
+      const jobs = object(entry.details).jobs;
+      if (Array.isArray(jobs)) for (const value of jobs.slice(0, 64)) {
+        const job = object(value), jobId = str(job.jobId);
+        for (const record of records) if (record.kind === "subagents") {
+          for (const child of record.children) if (child.id === jobId) {
+            const result = object(object(job.schema).data);
+            child.status = result.aborted === true ? "cancelled" : result.error ? "error" : "completed";
+          }
+        }
+      }
+    }
     const addImages = (recordId: string, content: unknown[]) => {
       const found = entryImages?.get(id) ?? pictures(content);
       if (found.length) images.set(recordId, found);
       return found.length ? refs(found) : undefined;
     };
+    const native = nativeCustomRecord(entry);
+    if (native) {
+      records.push(native);
+      if (native.kind === "todo") parsed.todos.set(id, { record: native, fingerprint: JSON.stringify(object(entry.data).phases) });
+      continue;
+    }
+    if (type === "custom" && entry.customType === "todo_hud_state") {
+      const data = object(entry.data);
+      const source = str(data.sourceEntryId);
+      const todo = parsed.todos.get(source);
+      if (todo && str(data.fingerprint) === todo.fingerprint) todo.record.visibility = data.visibility === "dismissed" ? "dismissed" : "visible";
+      continue;
+    }
     const variants: Record<string, "compaction" | "reset" | "model" | "mode"> = { compaction: "compaction", reset_boundary: "reset", model_change: "model", mode_change: "mode" };
     const variant = variants[type];
     if (variant) { records.push({ kind: "divider", id, ts, variant, label: str(entry.label) || (variant === "model" ? str(entry.modelId ?? entry.model) : variant), ...(typeof entry.summary === "string" ? { detail: capped(entry.summary, TEXT_CAP).text } : {}) }); continue; }
@@ -204,7 +234,11 @@ function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string
       tool.status = message.isError === true || details.isError === true || details.error !== undefined || (typeof details.exitCode === "number" && details.exitCode !== 0) ? "error" : "ok";
       parsed.interrupted.delete(tool.id);
       parsed.unresolved.delete(tool.id);
-      tool.endedTs = ts; tool.images = addImages(tool.id, content); continue;
+      tool.endedTs = ts; tool.images = addImages(tool.id, content);
+      const nativeRecords = nativeResultRecords(tool.name, details, tool.id, ts);
+      records.push(...nativeRecords);
+      for (const record of nativeRecords) if (record.kind === "todo") parsed.todos.set(id, { record, fingerprint: JSON.stringify(details.phases) });
+      continue;
     }
     if (role === "user") {
       const text = content.map(value => str(object(value).text)).filter(Boolean).join("\n"); texts.set(id, text);
@@ -213,6 +247,10 @@ function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string
     if (role !== "assistant" && !startEvent) continue;
     const start = type === "custom" ? object(entry.data) : entry;
     const assistantBlocks = startEvent ? [{ type: "toolCall", id: start.toolCallId, name: start.toolName, arguments: start.args }] : content;
+    if (startEvent) {
+      const existing = tools.get(str(start.toolCallId));
+      if (existing) existing.summary = prefixText(str(start.intent) || str(object(start.args).i) || existing.subject, 256);
+    }
     const turnCalls: string[] = [];
     if (startEvent) parsed.liveTailTool = str(start.toolCallId);
     assistantBlocks.forEach((value, index) => {
@@ -221,7 +259,7 @@ function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string
         const callId = str(block.id ?? block.toolCallId) || blockId;
         if (tools.has(callId)) return;
         const name = str(block.name), args = boundedArgs(block.arguments ?? block.args);
-        const tool: Extract<TranscriptRecord, { kind: "tool" }> = { kind: "tool", id: callId, ts, name, subject: subject(name, args), args, status: "running" };
+        const tool: Extract<TranscriptRecord, { kind: "tool" }> = { kind: "tool", id: callId, ts, name, subject: subject(name, args), summary: prefixText(str(startEvent ? start.intent : block.intent) || str(args.i) || subject(name, args), 256), args, status: "running" };
         tools.set(callId, tool); records.push(tool);
         parsed.unresolved.add(callId);
         if (!startEvent) turnCalls.push(callId);
@@ -251,6 +289,14 @@ function appendRecords(parsed: Parsed, branch: Entry[], entryImages?: Map<string
 function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
   const compact: Entry = { id: str(entry.id), parentId: str(entry.parentId), type: str(entry.type), timestamp: str(entry.timestamp ?? entry.ts) };
   const type = str(entry.type);
+  for (const key of ["cwd", "model", "modelId", "provider", "thinkingLevel", "configured", "serviceTier", "mode"]) {
+    if (typeof entry[key] === "string") compact[key] = prefixText(entry[key], 1024);
+  }
+  if (type === "custom" && ["user_todo_edit", "todo_hud_state", "vibe-session-lifecycle"].includes(str(entry.customType))) {
+    compact.customType = entry.customType;
+    compact.data = boundedArgs(entry.data, 64 * 1024, 2048, 10);
+    return compact;
+  }
   if (["compaction", "reset_boundary", "model_change", "mode_change"].includes(type)) {
     for (const key of ["label", "modelId", "model"]) if (typeof entry[key] === "string") compact[key] = prefixText(entry[key], 1024);
     if (typeof entry.summary === "string") compact.summary = capped(entry.summary, TEXT_CAP).text;
@@ -259,7 +305,7 @@ function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
   const startEvent = type === "tool_execution_start" || (type === "custom" && entry.customType === "tool_execution_start");
   if (startEvent) {
     const source = type === "custom" ? object(entry.data) : entry;
-    const start = { toolCallId: str(source.toolCallId), toolName: str(source.toolName), args: boundedArgs(source.args) };
+    const start = { toolCallId: str(source.toolCallId), toolName: str(source.toolName), args: boundedArgs(source.args), intent: prefixText(str(source.intent), 2048), startedAt: str(source.startedAt) };
     if (type === "custom") { compact.customType = "tool_execution_start"; compact.data = start; }
     else Object.assign(compact, start);
     return compact;
@@ -267,7 +313,7 @@ function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
   if (type !== "message" && (type !== "custom_message" || entry.display !== true)) return compact;
   const source = type === "message" ? object(entry.message) : entry;
   const role = type === "custom_message" ? "assistant" : str(source.role);
-  if (!["user", "assistant", "toolResult", "tool_result"].includes(role)) return compact;
+  if (!["user", "developer", "assistant", "toolResult", "tool_result"].includes(role)) return compact;
   const content = blocks(source);
   if (role === "user" || role === "toolResult" || role === "tool_result") {
     const found = pictures(content);
@@ -277,10 +323,13 @@ function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
     const block = object(value), blockType = str(block.type);
     if (blockType === "text") return { type: blockType, text: str(block.text) };
     if (blockType === "thinking") return { type: blockType, text: str(block.text ?? block.thinking), redacted: block.redacted === true };
-    if (blockType === "toolCall" || blockType === "tool_call") return { type: blockType, id: str(block.id ?? block.toolCallId), name: str(block.name), arguments: boundedArgs(block.arguments ?? block.args) };
+    if (blockType === "toolCall" || blockType === "tool_call") return { type: blockType, id: str(block.id ?? block.toolCallId), name: str(block.name), intent: prefixText(str(block.intent), 2048), arguments: boundedArgs(block.arguments ?? block.args) };
     return { type: blockType };
   }) };
   if (typeof source.model === "string") message.model = source.model;
+  if (typeof source.provider === "string") message.provider = source.provider;
+  if (source.usage) message.usage = boundedArgs(source.usage);
+  if (source.contextSnapshot) message.contextSnapshot = boundedArgs(source.contextSnapshot);
   if (role === "assistant" && (source.stopReason === "error" || source.stopReason === "aborted")) {
     message.stopReason = str(source.stopReason);
     message.errorMessage = capped(str(source.errorMessage), TEXT_CAP).text;
@@ -288,9 +337,10 @@ function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
   if (role === "toolResult" || role === "tool_result") {
     message.toolCallId = str(source.toolCallId ?? source.tool_call_id);
     const details = object(source.details);
+    message.details = boundedArgs(details, 64 * 1024, 2048, 10);
     message.isError = source.isError === true || details.isError === true || details.error !== undefined || (typeof details.exitCode === "number" && details.exitCode !== 0);
   }
-  if (type === "custom_message") { compact.display = true; compact.content = message.content; compact.model = message.model; compact.stopReason = message.stopReason; compact.errorMessage = message.errorMessage; }
+  if (type === "custom_message") { compact.display = true; compact.customType = entry.customType; compact.details = boundedArgs(source.details, 16 * 1024, 512); compact.content = message.content; compact.model = message.model; compact.stopReason = message.stopReason; compact.errorMessage = message.errorMessage; }
   else compact.message = message;
   return compact;
 }
