@@ -1,0 +1,4 @@
+import type { TranscriptRecord } from "../lib/transcript-types";
+export function IrcRow({ record, expanded, toggle, id }: { record: Extract<TranscriptRecord, { kind: "irc" }>; expanded: boolean; toggle: () => void; id: string }) {
+  return <section className="irc-row" data-record-id={record.id}><button className="tool-header" type="button" aria-expanded={expanded} aria-controls={id} onClick={toggle}><span aria-hidden="true">✉</span><strong>IRC</strong><span className="tool-subject">{record.from} → {record.to ?? "this session"}{record.auto ? " · auto" : ""}</span><span aria-hidden="true">⌄</span></button>{expanded && <div className="irc-body" id={id}><p>Incoming persisted message · {new Date(record.ts).toLocaleString()}</p>{record.replyTo && <p>Reply to {record.replyTo}</p>}<div>{record.body}</div></div>}</section>;
+}

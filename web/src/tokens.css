@@ -88,6 +88,10 @@
   --ok: var(--o-green);
   --warn: var(--o-yellow);
   --err: var(--o-red);
+  --context-ok: var(--muted);
+  --context-warn: var(--warn);
+  --context-high: var(--o-magenta);
+  --context-critical: var(--err);
   --ok-soft: color-mix(in srgb, var(--ok) 9%, transparent);
   --warn-soft: color-mix(in srgb, var(--warn) 9%, transparent);
   --err-soft: color-mix(in srgb, var(--err) 9%, transparent);

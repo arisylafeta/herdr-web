@@ -188,6 +188,27 @@ export const demoRecords: TranscriptRecord[] = [
   { kind: "assistant", id: "answer", ts, text: "### Ready for review\nThe conversation now keeps **answers readable** and machine evidence one tap away.\n\n- Session-scoped reads remain inside the receiver.\n- Tool cards retain their identity when work completes.\n- The terminal is always available as a fallback.\n\n```typescript\nconst view = pane.transcript ? \"chat\" : \"terminal\";\n```\n\n| Surface | Behavior |\n| --- | --- |\n| Chat | Completed messages and live tool status |\n| Terminal | Original pane output and controls |" },
   { kind: "tool", id: "image", ts, name: "render", subject: "Receiver architecture preview", args: { format: "png" }, status: "ok", output: { text: "Browser → bridge → omp; each boundary has one owner.", truncated: false }, images: [{ index: 0, mediaType: "image/png", bytes: 1024 }] },
   { kind: "tool", id: "running", ts, name: "bash", subject: "Inspecting responsive layout", args: { command: "viewport-check --width 390" }, status: "running" },
+  { kind: "vibe", id: "vibe-spawn", ts, op: "spawn", ack: { id: "additional-data", mode: "turn" }, workers: [] },
+  { kind: "vibe", id: "vibe-send", ts, op: "send", ack: { id: "additional-data", mode: "queued" }, workers: [] },
+  { kind: "vibe", id: "vibe-wait", ts, op: "wait", workers: [
+    { id: "additional-data", cli: "good", state: "running", turns: 3, queued: 1, elapsedMs: 2_940_000, model: "openai-codex/gpt-6.1-sol:medium", lastActivity: "Keeping audit corrections narrowly factual", observedAt: ts },
+    { id: "canonical-match", cli: "good", state: "idle", turns: 2, queued: 0, lastActivity: "Recording blocker and exact approval scope", observedAt: ts },
+    { id: "ai-summaries-scope", cli: "fast", state: "idle", turns: 1, queued: 0, observedAt: ts },
+    { id: "booting", cli: "fast", state: "starting", turns: 0, queued: 0, observedAt: ts },
+    { id: "old-review", state: "dead", turns: 1, queued: 0, observedAt: ts },
+  ], wait: { settled: 1, stillRunning: 1, timedOut: false, waiting: false } },
+  { kind: "vibe", id: "vibe-list", ts, op: "list", workers: [] },
+  { kind: "vibe", id: "vibe-kill", ts, op: "kill", workers: [{ id: "old-review", state: "dead", turns: 1, queued: 0 }] },
+  { kind: "irc", id: "irc", ts, from: "additional-data", to: "ScopeReview", body: "Previous wake attempts failed; review all remaining frozen corrections. Keep object scope explicit.", replyTo: "audit-17", auto: true },
+  { kind: "subagents", id: "subagents", ts, children: [
+    { id: "additional-data", agentType: "vibe good", description: "Object-scope audit", status: "running (observed)", nesting: 0 },
+    { id: "ScopeReview", parentId: "additional-data", agentType: "stock-reviewer", description: "Review Citroen auxiliary batteries", status: "running (observed)", nesting: 1 },
+    { id: "Evidence", parentId: "ScopeReview", agentType: "scout", description: "Inspect frozen evidence", status: "unknown", nesting: 2 },
+  ] },
+  { kind: "todo", id: "todo", ts, phases: [
+    { name: "Integration", tasks: [{ content: "Reverse-engineer JSONL", status: "completed" }, { content: "Add Herdr native status", status: "active" }, { content: "Public ingress", status: "blocked", blocker: "Waiting for the owner's decision" }, { content: "Smoke live OMP sessions", status: "pending" }, { content: "Scrape terminal glyphs", status: "abandoned" }] },
+    { name: "Discovery", tasks: [{ content: "Map disk evidence", status: "completed" }] },
+  ] },
 ];
 
 const demoSubmitted = new Map<string, TranscriptRecord[]>();
@@ -200,5 +221,10 @@ export function appendDemoTranscript(paneId: string, text: string) {
 export function demoTranscript(paneId: string, limit: number, status: TranscriptResponse["agentStatus"]): TranscriptResponse {
   const all = [...demoRecords, ...(demoSubmitted.get(paneId) ?? [])];
   const records = all.slice(-limit);
-  return { paneId, sessionId: "demo", revision: `demo-${all.length}`, total: all.length, records, hasEarlier: records.length < all.length, agentStatus: status, truncatedFile: false };
+  const query = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+  const pressure = query.get("context") ?? "warn";
+  const values: Record<string, { tokens: number; percent: number }> = { ok: { tokens: 20_000, percent: 2 }, warn: { tokens: 206_000, percent: 20.6 }, high: { tokens: 300_000, percent: 30 }, critical: { tokens: 600_000, percent: 60 } };
+  const value = values[pressure] ?? values.warn;
+  const oldBridge = query.has("oldBridge");
+  return { paneId, sessionId: "demo", revision: `demo-${all.length}`, total: all.length, records: oldBridge ? records.filter(record => !["vibe", "irc", "todo", "subagents"].includes(record.kind)) : records, hasEarlier: records.length < all.length, agentStatus: status, truncatedFile: false, ...(!oldBridge ? { status: { model: { id: "gpt-6.1-sol", name: "Sonnet 5.5", provider: "demo" }, thinking: "medium", mode: "Vibe", turnStartedAt: new Date(now - 2_940_000).toISOString(), activity: { label: "Wait for audit", startedAt: ts }, cwd: "/root/workspace/enrichments", git: { branch: "feat/native-working-state", staged: 0, unstaged: 21, untracked: 8, dirty: true }, context: { ...value, window: 1_000_000, level: pressure === "ok" || pressure === "high" || pressure === "critical" ? pressure : "warn", source: "estimate" }, workers: demoRecords.find(record => record.kind === "vibe" && record.op === "wait")?.kind === "vibe" ? demoRecords.filter((record): record is Extract<TranscriptRecord, { kind: "vibe" }> => record.kind === "vibe" && record.op === "wait")[0].workers : [], freshness: { fileUpdatedAt: new Date(now - 60_000).toISOString() } } } : {}) };
 }

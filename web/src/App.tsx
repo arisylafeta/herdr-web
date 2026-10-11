@@ -19,6 +19,11 @@ import { useBridges } from "./hooks/useBridges";
 import { usePushSetup } from "./hooks/usePush";
 import { useTheme } from "./lib/theme";
 import { isReadOnly, type AgentView } from "./lib/types";
+import { LiveActivityBar } from "./components/LiveActivityBar";
+import { WorkDetails } from "./components/WorkDetails";
+import { StatusBar } from "./components/StatusBar";
+import { disclosureId } from "./lib/workState";
+import "./components/work-status.css";
 
 export default function App() {
   const bridges = useBridges();
@@ -177,6 +182,11 @@ export default function App() {
             mode={herdr.mode}
           />
         )}
+        {herdr.selectedPane?.transcript && paneView.value === "chat" && <div className="native-work-dock" key={`${bridges.activeId}:${herdr.session}:${herdr.selectedPane.paneId}:${transcript.data?.sessionId}`}>
+          <LiveActivityBar status={transcript.data?.status} paneStatus={herdr.selectedPane.status} onStop={() => void herdr.interrupt()} readOnly={readOnly} />
+          {transcript.data && <WorkDetails data={transcript.data} id={disclosureId(bridges.activeId, herdr.session ?? "", herdr.selectedPane.paneId, transcript.data.sessionId, "details")} />}
+          {transcript.data?.status && <StatusBar status={transcript.data.status} id={disclosureId(bridges.activeId, herdr.session ?? "", herdr.selectedPane.paneId, transcript.data.sessionId, "status")} />}
+        </div>}
 
         <Composer
           pane={herdr.selectedPane}
@@ -184,7 +194,7 @@ export default function App() {
           bridgeId={bridges.activeId}
           session={herdr.session}
           busy={herdr.actionBusy}
-          running={herdr.selectedPane?.status === "working"}
+          running={herdr.selectedPane?.status === "working" && !(herdr.selectedPane.transcript && paneView.value === "chat")}
           readOnly={readOnly}
           onSend={herdr.send}
           onStop={() => void herdr.interrupt()}
