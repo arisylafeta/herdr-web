@@ -8,7 +8,7 @@ test("disk-backed native panes are read-only through staging", async ({ page }) 
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/*", route => { if (route.request().method() !== "GET") { blocked.push(`${route.request().method()} ${route.request().url()}`); return route.abort(); } return route.continue(); });
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const pane of ["wA1:p7", "w9H:pC", "wA4:p5"]) {
+  for (const pane of (process.env.HERDR_NATIVE_PANES?.split(",") ?? ["wA1:p7", "w9H:pC", "wA4:p5"])) {
     await page.goto(`/?pane=${encodeURIComponent(pane)}`);
     await expect(page.getByRole("button", { name: "Chat", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator(".transcript-content")).toBeVisible();
