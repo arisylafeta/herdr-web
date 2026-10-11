@@ -29,9 +29,9 @@ test("scrubbed lifecycle fixtures recover current child and nested referenced ta
   await child(join(f.childDir, "review/review.Scope.jsonl"));
   await child(join(f.childDir, "stray.jsonl"));
   const result = await readTranscriptChildren(f.path, f.entries, [f.root]);
-  expect(result.workers.map(row => row.id)).toEqual(["review", "review.Scope"]);
+  expect(result.workers.map(row => row.handle)).toEqual(["review", "review.Scope"]);
   expect(result.workers[0]).toMatchObject({ state: "running", model: "fixture-model", currentTool: "read", lastActivity: "Reading scrubbed evidence", outputTail: ["Scrubbed review progress"] });
-  expect(result.children[1]).toMatchObject({ id: "review.Scope", parentId: "review", nesting: 1, status: "active", agentType: "reviewer" });
+  expect(result.children[1]).toMatchObject({ handle: "review.Scope", parentId: result.children[0]!.id, nesting: 1, status: "active", agentType: "reviewer" });
   expect(result.childUpdatedAt).toBeDefined();
   expect(JSON.stringify(result)).not.toContain(f.root);
 });
@@ -46,7 +46,7 @@ test("only active parent and child branches contribute lifecycle or activity", a
     { type: "message", id: "answer", parentId: "child", message: { role: "assistant", model: "chosen", stopReason: "stop", content: "Finished branch" } },
   ]);
   const result = await readTranscriptChildren(f.path, entries, [f.root]);
-  expect(result.workers).toMatchObject([{ id: "review", state: "idle", model: "chosen", outputTail: ["Finished branch"] }]);
+  expect(result.workers).toMatchObject([{ handle: "review", state: "idle", model: "chosen", outputTail: ["Finished branch"] }]);
   expect(result.workers[0]?.lastActivity).toBeUndefined();
 });
 
@@ -114,7 +114,7 @@ test("count, recursion, per-file and total byte caps bound disk reads", async ()
   const large = await fixture(largeEntries);
   const body = JSON.stringify({ type: "session", id: "large", ignored: "x".repeat(6 * 1024 * 1024) }) + "\n";
   for (const id of ["a", "b", "c"]) await writeFile(join(large.childDir, `${id}.jsonl`), body);
-  expect((await readTranscriptChildren(large.path, largeEntries, [large.root])).workers.map(row => row.id)).toEqual(["c", "b"]);
+  expect((await readTranscriptChildren(large.path, largeEntries, [large.root])).workers.map(row => row.handle)).toEqual(["c", "b"]);
 });
 
 test("output is bounded, paths and credential assignments scrubbed, torn tail ignored", async () => {
@@ -134,9 +134,9 @@ test("generated task IDs survive compacted results without toolName and missing 
   ];
   const f = await fixture(entries); await child(join(f.childDir, "generated.jsonl"));
   const result = await readTranscriptChildren(f.path, entries, [f.root]);
-  expect(result.children.find(row => row.id === "named")).toMatchObject({ status: "unknown", description: "Named review" });
-  expect(result.children.find(row => row.id === "generated")).toMatchObject({ status: "active", description: "Generated review" });
-  expect(result.workers.map(row => row.id)).toEqual(["generated"]);
+  expect(result.children.find(row => row.handle === "named")).toMatchObject({ status: "unknown", description: "Named review" });
+  expect(result.children.find(row => row.handle === "generated")).toMatchObject({ status: "active", description: "Generated review" });
+  expect(result.workers.map(row => row.handle)).toEqual(["generated"]);
 });
 
 test("historical task references cannot evict an owned lifecycle worker", async () => {
@@ -150,8 +150,8 @@ test("historical task references cannot evict an owned lifecycle worker", async 
   }
   await child(join(f.childDir, "review.jsonl"));
   const result = await readTranscriptChildren(f.path, entries, [f.root]);
-  expect(result.children.find(row => row.id === "review")).toMatchObject({ status: "active" });
-  expect(result.workers.find(row => row.id === "review")).toMatchObject({ currentTool: "read" });
+  expect(result.children.find(row => row.handle === "review")).toMatchObject({ status: "active" });
+  expect(result.workers.find(row => row.handle === "review")).toMatchObject({ currentTool: "read" });
   expect(result.children.length).toBeLessThanOrEqual(64);
 });
 
@@ -161,4 +161,98 @@ test("observed elapsed stays frozen across polls on unchanged disk", async () =>
   const clock = spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
   try { expect(await readTranscriptChildren(f.path, f.entries, [f.root])).toEqual(first); }
   finally { clock.mockRestore(); }
+});
+
+test("opaque identity distinguishes dotted handles from nested ancestry and other sessions", async () => {
+  const entries = [header, lifecycle("crew", "root", "crew"), lifecycle("flat", "crew", "crew.Review")];
+  const f = await fixture(entries);
+  await child(join(f.childDir, "crew.Review.jsonl"));
+  await child(join(f.childDir, "crew.jsonl"), [{ type: "session", id: "child" }, lifecycle("nested", "child", "Review")]);
+  await mkdir(join(f.childDir, "crew")); await child(join(f.childDir, "crew/Review.jsonl"));
+  const result = await readTranscriptChildren(f.path, entries, [f.root]);
+  expect(new Set(result.children.map(row => row.id)).size).toBe(3);
+  const crew = result.children.find(row => row.handle === "crew")!;
+  const nested = result.children.find(row => row.parentId === crew.id)!;
+  expect(nested.handle).toBe("crew.Review");
+  expect(result.workers.find(row => row.id === nested.id)?.parentId).toBe(crew.id);
+  expect(result.children.every(row => row.id !== row.handle)).toBe(true);
+  expect(await readTranscriptChildren(f.path, entries, [f.root])).toEqual(result);
+  const other = await fixture(entries);
+  expect((await readTranscriptChildren(other.path, entries, [other.root])).children.map(row => row.id)).not.toEqual(result.children.filter(row => !row.parentId).map(row => row.id));
+  expect(JSON.stringify(result)).not.toContain(f.root);
+});
+
+test("current peer reads precede dead historical byte consumers and skipped descriptors survive", async () => {
+  const entries = [header, lifecycle("current", "root", "Current"), lifecycle("running", "current", "Current", "turn-started"),
+    lifecycle("a", "running", "oldA"), lifecycle("deadA", "a", "oldA", "tombstone"),
+    lifecycle("b", "deadA", "oldB"), lifecycle("deadB", "b", "oldB", "tombstone")];
+  const f = await fixture(entries); await child(join(f.childDir, "Current.jsonl"));
+  const body = JSON.stringify({ type: "session", id: "old", padding: "" });
+  const large = body.slice(0, -2) + "x".repeat(8 * 1024 * 1024 - body.length - 1) + '"}\n';
+  for (const id of ["oldA", "oldB"]) await writeFile(join(f.childDir, `${id}.jsonl`), large);
+  const result = await readTranscriptChildren(f.path, entries, [f.root]);
+  expect(result.workers.find(row => (row.handle ?? row.id) === "Current")?.state).toBe("running");
+  expect(result.children.map(row => row.handle).sort()).toEqual(["Current", "oldA", "oldB"]);
+  expect(result.children.filter(row => row.childAvailable === false)).toHaveLength(1);
+});
+
+test("unknown child counters remain absent and only explicit lifecycle counts carry observation time", async () => {
+  const spawn = lifecycle("spawn", "root", "review");
+  const f = await fixture([header, spawn]); await child(join(f.childDir, "review.jsonl"));
+  const unknown = (await readTranscriptChildren(f.path, f.entries, [f.root])).workers[0]!;
+  expect(unknown.turns).toBeUndefined(); expect(unknown.queued).toBeUndefined();
+  expect(unknown.turnsObservedAt).toBeUndefined(); expect(unknown.queuedObservedAt).toBeUndefined();
+  const started = lifecycle("turn", "spawn", "review", "turn-started");
+  const known = (await readTranscriptChildren(f.path, [...f.entries, started], [f.root])).workers[0]!;
+  expect(known.turns).toBe(2); expect(known.turnsObservedAt).toBe(started.timestamp as string);
+  delete (started.data as Entry).turn;
+  expect((await readTranscriptChildren(f.path, [...f.entries, started], [f.root])).workers[0]?.turns).toBeUndefined();
+});
+
+test("child excerpts scrub authoritative file URIs punctuation and inherited ancestor paths", async () => {
+  const f = await fixture(); const path = join(f.childDir, "review.jsonl");
+  await child(path, [{ type: "session", id: "child" }, lifecycle("nested", "child", "nested")]);
+  await mkdir(join(f.childDir, "review")); const nested = join(f.childDir, "review/nested.jsonl");
+  await child(nested, [{ type: "session", id: "nested" }, { type: "message", id: "out", parentId: "nested", message: { role: "assistant", content: `file://${nested} cwd:${path}; ancestor:file://${f.path}`, stopReason: "stop" } }]);
+  const result = await readTranscriptChildren(f.path, f.entries, [f.root]);
+  for (const authoritative of [nested, path, f.path]) expect(JSON.stringify(result)).not.toContain(authoritative);
+  expect(result.workers.find(row => row.parentId)?.outputTail?.[0]).toContain("[path]");
+});
+
+test("every child descriptor identifies unavailable reference source or successful child evidence", async () => {
+  const entries = [header, lifecycle("spawn", "root", "missing"),
+    { type: "custom", id: "call", parentId: "spawn", customType: "tool_execution_start", data: { toolName: "task", toolCallId: "task", args: { tasks: [{ name: "named" }] } } },
+    { type: "message", id: "ack", parentId: "call", message: { role: "toolResult", toolCallId: "task", details: { progress: [{ id: "generated" }, { id: "readable" }] } } }];
+  const f = await fixture(entries); await child(join(f.childDir, "readable.jsonl"));
+  await writeFile(join(f.childDir, "generated.jsonl"), "malformed\n");
+  const rows = (await readTranscriptChildren(f.path, entries, [f.root])).children;
+  for (const [handle, source, childAvailable] of [["missing", "lifecycle", false], ["named", "task-call", false], ["generated", "task-result", false], ["readable", "child", true]] as const)
+    expect(rows.find(row => (row.handle ?? row.id) === handle)).toMatchObject({ source, childAvailable });
+});
+
+test("current references survive dead lifecycle descriptor pressure and peer reads precede recursion", async () => {
+  const entries: Entry[] = [header];
+  let parentId = "root";
+  for (let index = 0; index < 64; index++) {
+    const spawn = `spawn-${index}`, dead = `dead-${index}`;
+    entries.push(lifecycle(spawn, parentId, `old${index}`), lifecycle(dead, spawn, `old${index}`, "tombstone"));
+    parentId = dead;
+  }
+  entries.push({ type: "custom", id: "current", parentId, customType: "tool_execution_start", data: { toolName: "task", toolCallId: "task", args: { tasks: [{ name: "Current" }, { name: "Other" }] } } });
+  const f = await fixture(entries); await child(join(f.childDir, "Current.jsonl")); await child(join(f.childDir, "Other.jsonl"));
+  const projected = await readTranscriptChildren(f.path, entries, [f.root]);
+  expect(projected.children).toHaveLength(64);
+  for (const handle of ["Current", "Other"]) expect(projected.workers.find(row => (row.handle ?? row.id) === handle)?.state).toBe("running");
+
+  const peers = [header, lifecycle("peer", "root", "Peer"), lifecycle("crew", "peer", "Crew")];
+  const g = await fixture(peers); await child(join(g.childDir, "Peer.jsonl"));
+  const crew: Entry[] = [{ type: "session", id: "child" }];
+  let ancestor = "child";
+  for (let index = 0; index < 64; index++) {
+    const id = `nested-${index}`; crew.push(lifecycle(id, ancestor, `nested${index}`)); ancestor = id;
+  }
+  await child(join(g.childDir, "Crew.jsonl"), crew);
+  const result = await readTranscriptChildren(g.path, peers, [g.root]);
+  expect(result.workers.find(row => (row.handle ?? row.id) === "Peer")?.currentTool).toBe("read");
+  expect(result.children).toHaveLength(64);
 });
