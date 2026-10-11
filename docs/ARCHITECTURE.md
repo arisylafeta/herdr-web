@@ -129,9 +129,12 @@ settings and unseen system/tool context cannot be recovered from disk. Pressure 
 the earliest of 50%/150k, 70%/270k and 90%/500k tokens.
 
 Git reuses the workspace inspection subprocess/security boundary at the pane cwd through a brief
-stale-while-revalidate cache. Its lightweight footer path counts porcelain states without diff or
-numstat reads (untracked directories are grouped as native git does); slow git never blocks a
-transcript response. Status and owned-child projections participate in the revision/ETag, including
+stale-while-revalidate cache. Its footer path counts repository-wide porcelain states without diff
+or numstat reads, groups untracked directories and pairs only exact renames like native VCS.
+Gitlink index/HEAD changes count normally; nested worktree dirtiness is inspected separately with
+each child's filters disabled, never through unsafe recursive `git status`. Submodule reads share
+the Git deadline and are bounded to 64 repositories/four depths. Slow Git never blocks transcripts.
+Status and owned-child projections participate in the revision/ETag, including
 freshness, so child and git changes appear without a director append. `turnStartedAt` estimates
 the initiating user/developer message only while working; it is not process uptime.
 

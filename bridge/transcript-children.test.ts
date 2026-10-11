@@ -56,7 +56,7 @@ test("old unresolved starts never remain active; settled and dead lifecycle win 
   const stale = await readTranscriptChildren(f.path, f.entries, [f.root]);
   expect(stale.workers[0]).toMatchObject({ state: "idle" }); expect(stale.children[0]?.status).toBe("unknown");
   await utimes(path, new Date(), new Date());
-  for (const [action, state] of [["turn-settled", "idle"], ["tombstone", "dead"]]) {
+  for (const [action, state] of [["turn-settled", "idle"], ["tombstone", "dead"]] as const) {
     const result = await readTranscriptChildren(f.path, [...f.entries, lifecycle("end", "turn", "review", action)], [f.root]);
     expect(result.workers[0]?.state).toBe(state); expect(result.workers[0]?.currentTool).toBeUndefined();
     expect(result.children[0]?.status).not.toBe("active");

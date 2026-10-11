@@ -5,11 +5,49 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveTranscriptStatus, estimateTranscriptContext } from "./transcript-status";
 import type { TranscriptStatus } from "./transcript-types";
+import { readWorkspaceGitSummary } from "./workspace-inspection";
 
 const ts = "2026-10-11T13:00:00.000Z";
 const assistant = (usage: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ type: "message", message: { role: "assistant", usage, ...extra } });
 
 describe("disk transcript status", () => {
+  test("native git counts pair exact renames but count edited moves as add plus delete", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "herdr-rename-status-"));
+    try {
+      await Bun.$`git init -q ${repo}`.quiet();
+      const content = Array.from({ length: 100 }, (_, i) => `example line ${i}`).join("\n") + "\n";
+      await writeFile(join(repo, "exact.txt"), content);
+      await writeFile(join(repo, "edited.txt"), content + "different original ending\n");
+      await Bun.$`git -C ${repo} add exact.txt edited.txt`.quiet();
+      await Bun.$`git -C ${repo} -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm initial`.quiet();
+      await Bun.$`git -C ${repo} mv exact.txt exact-moved.txt`.quiet();
+      await Bun.$`git -C ${repo} mv edited.txt edited-moved.txt`.quiet();
+      await writeFile(join(repo, "edited-moved.txt"), content + "changed ending\n");
+      await Bun.$`git -C ${repo} add edited-moved.txt`.quiet();
+      expect(await readWorkspaceGitSummary(repo)).toMatchObject({ staged: 3, unstaged: 0, untracked: 0 });
+    } finally { await rm(repo, { recursive: true, force: true }); }
+  });
+  test("submodule dirtiness is counted without executing nested clean filters", async () => {
+    const root = await mkdtemp(join(tmpdir(), "herdr-submodule-status-"));
+    const source = join(root, "source"), parent = join(root, "parent"), marker = join(root, "executed");
+    try {
+      for (const path of [source, parent]) {
+        await mkdir(path);
+        await Bun.$`git init -q ${path}`.quiet();
+      }
+      await writeFile(join(source, "tracked"), "before");
+      await Bun.$`git -C ${source} add tracked`.quiet();
+      await Bun.$`git -C ${source} -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm initial`.quiet();
+      await Bun.$`git -C ${parent} -c protocol.file.allow=always submodule add -q ${source} sub`.quiet();
+      await Bun.$`git -C ${parent} -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm sub`.quiet();
+      const sub = join(parent, "sub");
+      await Bun.$`git -C ${sub} config filter.probe.clean ${`sh -c "echo executed >> ${marker}; cat"`}`.quiet();
+      await writeFile(join(sub, ".gitattributes"), "tracked filter=probe\n");
+      await writeFile(join(sub, "tracked"), "alter!");
+      expect(await readWorkspaceGitSummary(parent)).toMatchObject({ staged: 0, unstaged: 1, untracked: 0 });
+      expect(await Bun.file(marker).exists()).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   test("uses active model, effort and mode changes without treating side usage as a switch", async () => {
     const status = await deriveTranscriptStatus([
       { type: "model_change", model: "missing-provider/first" },

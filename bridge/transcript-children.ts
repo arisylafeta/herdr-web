@@ -84,7 +84,7 @@ function contained(root: string, path: string): boolean { const rel = relative(r
 async function checkedPath(path: string, roots: string[], file: boolean): Promise<Stats | undefined> {
   if (!isAbsolute(path) || path !== resolve(path) || !roots.some(root => contained(root, path))) return;
   // Check every component, including ancestors above the allowed root.
-  let current = sep;
+  let current: string = sep;
   const parts = resolve(path).split(sep).filter(Boolean);
   for (let index = 0; index < parts.length; index++) {
     current = join(current, parts[index]!);
