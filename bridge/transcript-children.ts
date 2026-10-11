@@ -154,8 +154,9 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
   let bytes = 0, count = 0, latestMtime = 0;
   const seen = new Set<string>(), now = Date.now();
   type Branch = { path: string; entries: Entry[]; depth: number; parentId?: string; ancestry: string[]; paths: string[]; handle?: string };
-  const queue: Branch[] = [{ path: sessionPath, entries, depth: 0, ancestry: [], paths: [sessionPath] }];
-  async function visit(parent: Branch): Promise<void> {
+  type Candidate = { ref: Reference; path: string; info?: Stats; priority: number; depth: number; parentId?: string; ancestry: string[]; id: string; displayHandle: string; paths: string[]; descriptor: SubagentRow };
+  const pending: Candidate[] = [];
+  async function discover(parent: Branch): Promise<void> {
     const { path: parentPath, entries: source, depth, parentId } = parent;
     if (depth >= MAX_DEPTH) return;
     const candidates = [];
@@ -168,7 +169,7 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
       candidates.push({ ref, path, info, priority });
     }
     candidates.sort((a, b) => b.priority - a.priority);
-    for (const { ref, path, info } of candidates) {
+    for (const { ref, path, info, priority } of candidates) {
       if (count >= MAX_CHILDREN) return;
       if (seen.has(path)) continue;
       seen.add(path); count++;
@@ -178,6 +179,14 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
       const paths = [path, ...parent.paths];
       const descriptor: SubagentRow = { id, handle: displayHandle, agentType: text(ref.agent, 240, paths), description: text(ref.description, 240, paths), status: ref.state === "dead" ? "dead" : "unknown", nesting: depth, parentId, source: ref.source, childAvailable: false };
       children.push(descriptor);
+      pending.push({ ref, path, info, priority, depth, parentId, ancestry, id, displayHandle, paths, descriptor });
+    }
+  }
+  await discover({ path: sessionPath, entries, depth: 0, ancestry: [], paths: [sessionPath] });
+  while (pending.length) {
+      // A valid read can reveal current descendants: rank them before historical peers.
+      pending.sort((a, b) => b.priority - a.priority || a.depth - b.depth);
+      const { ref, path, info, depth, parentId, ancestry, id, displayHandle, paths, descriptor } = pending.shift()!;
       let handle;
       try {
         if (!info || bytes >= MAX_BYTES || info.size > MAX_FILE_BYTES || info.size > MAX_BYTES - bytes) continue;
@@ -214,11 +223,9 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
         descriptor.toolCount = a.toolCount;
         descriptor.model = a.model;
         descriptor.currentTool = state === "running" && a.pending ? a.latestTool : undefined;
-        queue.push({ path, entries: childEntries, depth: depth + 1, parentId: id, ancestry, paths, handle: displayHandle });
+        await discover({ path, entries: childEntries, depth: depth + 1, parentId: id, ancestry, paths, handle: displayHandle });
       } catch { /* unreadable, foreign or concurrently replaced child: retain unavailable descriptor */ }
       finally { await handle?.close(); }
     }
-  }
-  for (let index = 0; index < queue.length && count < MAX_CHILDREN; index++) await visit(queue[index]!);
   return { workers, children, ...(latestMtime ? { childUpdatedAt: new Date(latestMtime).toISOString() } : {}) };
 }

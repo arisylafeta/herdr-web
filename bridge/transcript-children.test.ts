@@ -256,3 +256,22 @@ test("current references survive dead lifecycle descriptor pressure and peer rea
   expect(result.workers.find(row => (row.handle ?? row.id) === "Peer")?.currentTool).toBe("read");
   expect(result.children).toHaveLength(64);
 });
+
+test("newly discovered current descendants precede dead root byte consumers", async () => {
+  const entries = [header, lifecycle("crew", "root", "Crew"),
+    lifecycle("a", "crew", "oldA"), lifecycle("deadA", "a", "oldA", "tombstone"),
+    lifecycle("b", "deadA", "oldB"), lifecycle("deadB", "b", "oldB", "tombstone")];
+  const f = await fixture(entries);
+  await child(join(f.childDir, "Crew.jsonl"), [{ type: "session", id: "child" }, lifecycle("current", "child", "Current"), lifecycle("run", "current", "Current", "turn-started")]);
+  await mkdir(join(f.childDir, "Crew")); await child(join(f.childDir, "Crew/Current.jsonl"), [
+    { type: "session", id: "current", padding: "x".repeat(16 * 1024) },
+    { type: "custom", id: "read", parentId: "current", customType: "tool_execution_start", data: { toolCallId: "call", toolName: "read" } },
+  ]);
+  const prefix = JSON.stringify({ type: "session", id: "old", padding: "" });
+  const large = prefix.slice(0, -2) + "x".repeat(8 * 1024 * 1024 - 4096 - prefix.length - 1) + '"}\n';
+  for (const id of ["oldA", "oldB"]) await writeFile(join(f.childDir, `${id}.jsonl`), large);
+  const result = await readTranscriptChildren(f.path, entries, [f.root]);
+  expect(result.workers.find(row => row.handle === "Crew.Current")?.currentTool).toBe("read");
+  expect(result.children).toHaveLength(4);
+  expect(result.children.filter(row => !row.childAvailable)).toHaveLength(1);
+});
