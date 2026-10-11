@@ -90,16 +90,19 @@ describe("disk transcript status", () => {
       await Bun.$`git -C ${repo} add tracked.txt`.quiet();
       await writeFile(join(repo, "tracked.txt"), "unstaged\n");
       await writeFile(join(repo, "untracked.txt"), "new file");
+      await mkdir(join(repo, "untracked-dir"));
+      await writeFile(join(repo, "untracked-dir", "a.txt"), "a");
+      await writeFile(join(repo, "untracked-dir", "b.txt"), "b");
       const modulePath = join(import.meta.dir, "transcript-status.ts");
-      // Integration-only real scheduling: git runs outside JS fake timers.
-      // Poll its observable completion, with a bounded deadline, rather than guessing a completion delay.
+      // Yield through asynchronous filesystem completions, not wall-clock sleeps.
       const source = `import { deriveTranscriptStatus } from ${JSON.stringify(modulePath)};
+        import { stat } from 'node:fs/promises';
         const entries = [{type:'model_change',model:'fixture/sonnet'}, {type:'message',message:{role:'assistant',usage:{input:206165}}}];
         const first = await deriveTranscriptStatus(entries,'idle',${JSON.stringify(ts)},${JSON.stringify(repo)});
         if (first.git !== undefined) throw new Error('cold git blocked response');
         let status;
-        for (let n=0;n<100;n++) {
-          await Bun.sleep(20);
+        for (let n=0;n<1000;n++) {
+          await stat(${JSON.stringify(repo)});
           status = await deriveTranscriptStatus(entries,'idle',${JSON.stringify(ts)},${JSON.stringify(repo)});
           if(status.git) break;
         }
@@ -111,7 +114,7 @@ describe("disk transcript status", () => {
       const status = JSON.parse(output) as TranscriptStatus;
       expect(status.model?.name).toBe("Sonnet fixture");
       expect(status.context).toEqual({ tokens: 206165, window: 1000000, percent: 20.6165, level: "warn", source: "estimate" });
-      expect(status.git).toMatchObject({ staged: 1, unstaged: 1, untracked: 1, dirty: true });
+      expect(status.git).toMatchObject({ staged: 1, unstaged: 1, untracked: 2, dirty: true });
       await rm(path);
       await symlink(join(home, "missing.db"), path);
       const blocked = Bun.spawn([process.execPath, "--eval", `import { deriveTranscriptStatus } from ${JSON.stringify(modulePath)}; console.log(JSON.stringify(await deriveTranscriptStatus([{type:'model_change',model:'fixture/sonnet'}], 'idle', '')));`], { env: { ...process.env, HOME: home }, stdout: "pipe", stderr: "pipe" });

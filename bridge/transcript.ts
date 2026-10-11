@@ -7,6 +7,8 @@ import { createHash, type Hash } from "node:crypto";
 import type { AgentStatus } from "./types";
 import type { ImageRef, TranscriptRecord, TranscriptResponse } from "./transcript-types";
 import { nativeCustomRecord, nativeResultRecords } from "./transcript-native";
+import { deriveTranscriptStatus } from "./transcript-status";
+import { readTranscriptChildren, type ChildProjection } from "./transcript-children";
 
 export type AgentSession = { kind: string; value: string; source?: string };
 export function defaultTranscriptRoots(): string[] {
@@ -292,7 +294,7 @@ function compactEntry(entry: Entry, images: Map<string, Picture[]>): Entry {
   for (const key of ["cwd", "model", "modelId", "provider", "thinkingLevel", "configured", "serviceTier", "mode"]) {
     if (typeof entry[key] === "string") compact[key] = prefixText(entry[key], 1024);
   }
-  if (type === "custom" && ["user_todo_edit", "todo_hud_state", "vibe-session-lifecycle"].includes(str(entry.customType))) {
+  if (type === "custom" && ["user_todo_edit", "todo_hud_state", "vibe-session-lifecycle", "session_exit"].includes(str(entry.customType))) {
     compact.customType = entry.customType;
     compact.data = boundedArgs(entry.data, 64 * 1024, 2048, 10);
     return compact;
@@ -396,6 +398,7 @@ async function regionChecksum(handle: FileHandle, start: number, end: number, se
 export class TranscriptStore {
   private readonly cache = new Map<string, Cache>();
   private readonly pending = new Map<string, Promise<Cache>>();
+  private readonly childSnapshots = new Map<string, { revision: string; at: number; value: Promise<ChildProjection> }>();
   private readonly waiters: Array<() => void> = [];
   private activeLoads = 0;
   private retainedBytes = 0;
@@ -403,6 +406,15 @@ export class TranscriptStore {
 
   constructor(private readonly roots = defaultTranscriptRoots(), private readonly fileCap = FILE_CAP, private readonly options: StoreOptions = {}) {
     this.cacheBudget = options.cacheBytes ?? 192 * 1024 * 1024;
+  }
+
+  private children(path: string, cache: Cache): Promise<ChildProjection> {
+    const existing = this.childSnapshots.get(path);
+    if (existing?.revision === cache.revision && Date.now() - existing.at < 2000) return existing.value;
+    if (this.childSnapshots.size >= 8) this.childSnapshots.delete(this.childSnapshots.keys().next().value!);
+    const value = readTranscriptChildren(path, cache.parsed.branch, this.roots);
+    this.childSnapshots.set(path, { revision: cache.revision, at: Date.now(), value });
+    return value;
   }
 
   private async load(agent: string, session: AgentSession | undefined, sessionId: string): Promise<Cache> {
@@ -541,16 +553,28 @@ export class TranscriptStore {
     throw new TranscriptError(503, "transcript changed during read");
   }
 
-  async transcript(paneId: string, sessionId: string, agent: string, agentSession: AgentSession | undefined, agentStatus: AgentStatus, limit = 60): Promise<TranscriptResponse> {
-    const cache = await this.load(agent, agentSession, sessionId), total = cache.parsed.records.length;
+  async transcript(paneId: string, sessionId: string, agent: string, agentSession: AgentSession | undefined, agentStatus: AgentStatus, limit = 60, cwd?: string): Promise<TranscriptResponse> {
+    const cache = await this.load(agent, agentSession, sessionId);
     const count = Number.isFinite(limit) && limit > 0 ? Math.min(400, Math.floor(limit)) : 60;
-    const revision = `"${createHash("sha256").update(cache.revision).update(agentStatus).update(String(count)).digest("hex")}"`;
+    const [status, owned] = await Promise.all([
+      deriveTranscriptStatus(cache.parsed.branch, agentStatus, new Date(cache.mtimeMs).toISOString(), cwd),
+      this.children(agentSession!.value, cache),
+    ]);
+    const latestWall = cache.parsed.records.findLast(record => record.kind === "vibe");
+    const workers = new Map((latestWall?.kind === "vibe" ? latestWall.workers : []).map(row => [row.id, { ...row, ...(Date.now() - cache.mtimeMs > 120_000 && row.state === "running" ? { state: "idle" as const } : {}) }]));
+    for (const worker of owned.workers) workers.set(worker.id, worker);
+    if (workers.size) status.workers = [...workers.values()].slice(0, 64);
+    if (owned.childUpdatedAt) status.freshness.childUpdatedAt = owned.childUpdatedAt;
+    const projection: TranscriptRecord[] = owned.children.length ? [{ kind: "subagents", id: `${cache.sessionId}:children`, ts: owned.childUpdatedAt ?? status.freshness.fileUpdatedAt, children: owned.children }] : [];
+    const allRecords = projection.length ? cache.parsed.records.concat(projection) : cache.parsed.records, total = allRecords.length;
+    const revision = `"${createHash("sha256").update(cache.revision).update(agentStatus).update(String(count)).update(JSON.stringify(status)).update(JSON.stringify(projection)).digest("hex")}"`;
     const liveTool = liveInterruptedTool(cache.parsed, agentStatus);
-    const records = cache.parsed.records.slice(-count).map(record => {
+    const records = allRecords.slice(-count).map(record => {
       if (record.kind === "tool" && record.id === liveTool) return { ...record, status: "running" as const, output: undefined };
+      if (record.kind === "tool" && record.status === "running" && (agentStatus === "idle" || agentStatus === "done")) return { ...record, status: "error" as const, output: { text: "interrupted", truncated: false } };
       return record;
     });
-    return { paneId, sessionId: cache.sessionId, revision, total, records, hasEarlier: total > count, agentStatus, truncatedFile: cache.start > 0 };
+    return { paneId, sessionId: cache.sessionId, revision, total, records, hasEarlier: total > count, agentStatus, truncatedFile: cache.start > 0, status };
   }
   async record(sessionId: string, agent: string, session: AgentSession | undefined, recordId: string, agentStatus: AgentStatus = "idle"): Promise<{ recordId: string; text: string; truncated: boolean }> {
     const cache = await this.load(agent, session, sessionId), text = cache.parsed.texts.get(recordId);

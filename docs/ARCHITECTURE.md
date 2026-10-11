@@ -128,20 +128,23 @@ reset/compaction boundaries. It is explicitly `source: "estimate"`: pending prom
 settings and unseen system/tool context cannot be recovered from disk. Pressure thresholds use
 the earliest of 50%/150k, 70%/270k and 90%/500k tokens.
 
-Git reuses workspace inspection at the pane cwd through a brief stale-while-revalidate cache;
-slow git never blocks a transcript response. The status and owned-child projection participate
-in the response revision/ETag, including freshness timestamps, so a child or git change is visible
-without a director append. `turnStartedAt` is an initiating user/developer message estimate and
-is present only while working; it is not process uptime.
+Git reuses the workspace inspection subprocess/security boundary at the pane cwd through a brief
+stale-while-revalidate cache. Its lightweight footer path counts porcelain states without diff or
+numstat reads (untracked directories are grouped as native git does); slow git never blocks a
+transcript response. Status and owned-child projections participate in the revision/ETag, including
+freshness, so child and git changes appear without a director append. `turnStartedAt` estimates
+the initiating user/developer message only while working; it is not process uptime.
 
 Child reads follow only lifecycle/call references under `<session without .jsonl>/<id>.jsonl`,
 recursively within bounded depth/count/byte budgets. They require same-UID regular files,
 non-symlink path components, canonical allowed-root containment and checked opened identity.
-Old child evidence cannot establish active work. Every worker snapshot carries `observedAt`;
-freshness distinguishes director and child disk updates. Missing child details retain an unknown
-descriptor. No directory-wide historical-session discovery, credentials, drafts, extension observer
-or terminal scraping feeds this projection. Native streaming text, queues, exact runtime timers,
-IRC relay observations and retry/approval state remain unavailable: use the terminal surface.
+Old child evidence cannot establish active work. Lifecycle children take priority over historical
+task references under the child budget; an eight-entry, two-second projection cache bounds repeat
+reads. Every worker snapshot carries `observedAt`; freshness separates director and child updates.
+Missing child details retain an unknown descriptor. No directory-wide historical-session discovery,
+credentials, drafts, extension observer or terminal scraping feeds this projection. Native streaming
+text, queues, exact runtime timers, IRC relay observations and retry/approval state remain unavailable:
+use the terminal surface.
 
 
 ## Browser chat view

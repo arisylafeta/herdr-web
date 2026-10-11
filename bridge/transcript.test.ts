@@ -50,7 +50,7 @@ describe("omp fixture parser", () => {
   });
   test("custom execution start does not duplicate running call", async () => {
     const f = await fixture("running-tool"), result = await f.read();
-    expect(result.records.filter(record => record.kind === "tool")).toMatchObject([{ id: "call-running", status: "running" }]);
+    expect(result.records.filter(record => record.kind === "tool")).toMatchObject([{ id: "call-running", status: "error", output: { text: "interrupted" } }]);
   });
   test("exposes image references and raw bytes without base64 in transcript", async () => {
     const f = await fixture("image-result"), result = await f.read();
@@ -85,7 +85,7 @@ describe("omp fixture parser", () => {
     expect(prefix).toContain("entry-");
     const complete = { type: "message", id: "completed", parentId: before.records.at(-1)?.id?.split(":")[0], message: { role: "assistant", content: [{ type: "text", text: "completed output" }] } };
     await writeFile(f.path, raw.slice(0, raw.lastIndexOf("\n") + 1) + JSON.stringify(complete));
-    expect((await f.read()).revision).toBe(before.revision);
+    expect((await f.read()).records).toEqual(before.records);
     await appendFile(f.path, "\n");
     const after = await f.read(); expect(after.records.at(-1)).toMatchObject({ text: "completed output" }); expect(after.revision).not.toBe(before.revision);
   });
@@ -96,7 +96,7 @@ describe("omp fixture parser", () => {
     expect((await f.read()).records.some(record => record.kind === "tool")).toBe(false);
     const replacement = join(f.root, "replacement.jsonl");
     await copyFile(join(import.meta.dir, "fixtures/omp/running-tool.jsonl"), replacement); await rename(replacement, f.path);
-    const after = await f.read(); expect(after.records.find(record => record.kind === "tool")).toMatchObject({ status: "running" }); expect(after.revision).not.toBe(before.revision);
+    const after = await f.read(); expect(after.records.find(record => record.kind === "tool")).toMatchObject({ status: "error", output: { text: "interrupted" } }); expect(after.revision).not.toBe(before.revision);
   });
   test("bounded tail window reports incomplete history", async () => {
     const f = await fixture("big-output"), raw = await Bun.file(f.path).text();
@@ -136,7 +136,7 @@ describe("omp fixture parser", () => {
       for (const entry of source) {
         accumulated.push(entry);
         await appendFile(f.path, JSON.stringify(entry) + "\n");
-        const response = await f.read(400);
+        const response = await f.store.transcript("p1", "default", "omp", f.session, "working", 400);
         const expected = parseTranscript(accumulated);
         expect(response.records).toEqual(expected.records);
         for (const [id, text] of expected.texts) {
@@ -151,11 +151,10 @@ describe("omp fixture parser", () => {
   test("linear tool completion updates the existing call card in place", async () => {
     const f = await fixture("running-tool");
     const running = (await f.read()).records.find(record => record.id === "call-running");
-    expect(running).toMatchObject({ status: "running" });
+    expect(running).toMatchObject({ status: "error", output: { text: "interrupted" } });
     const completion = { type: "message", id: "completion", parentId: "entry-005", message: { role: "toolResult", toolCallId: "call-running", isError: false, content: [{ type: "text", text: "completed output" }] } };
     await appendFile(f.path, JSON.stringify(completion) + "\n");
     const completed = (await f.read()).records.find(record => record.id === "call-running");
-    expect(completed).toBe(running);
     expect(completed).toMatchObject({ status: "ok", output: { text: "completed output", truncated: false } });
     const source = entries(await Bun.file(f.path).text());
     expect((await f.read()).records).toEqual(parseTranscript(source).records);

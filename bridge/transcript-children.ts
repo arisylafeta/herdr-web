@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { SubagentRow, WorkerRow } from "./transcript-types";
 
 type Entry = Record<string, unknown>;
+export type ChildProjection = { workers: WorkerRow[]; children: SubagentRow[]; childUpdatedAt?: string };
 type Reference = { id: string; agent: string; description: string; cli?: "good" | "fast"; state: WorkerRow["state"]; turns: number; startedAt?: number; lifecycle: boolean };
 // Disk evidence expires: a saved unresolved tool is not proof of present liveness.
 const RECENT_MS = 120_000;
@@ -36,7 +37,11 @@ function references(entries: Entry[]): Reference[] {
   const taskCalls = new Set<string>();
   function add(idValue: unknown, values: Partial<Reference> = {}): Reference | undefined {
     const id = safeId(idValue);
-    if (!id || (!refs.has(id) && refs.size >= MAX_CHILDREN)) return;
+    if (!id) return;
+    if (!refs.has(id) && refs.size >= MAX_CHILDREN) {
+      const oldest = [...refs].find(([, ref]) => !ref.lifecycle)?.[0] ?? refs.keys().next().value!;
+      refs.delete(oldest);
+    }
     const ref = refs.get(id) ?? { id, agent: "task", description: "", state: "starting", turns: 0, lifecycle: false };
     Object.assign(ref, values); refs.set(id, ref); return ref;
   }
@@ -73,7 +78,7 @@ function references(entries: Entry[]): Reference[] {
       const progress = object(value); add(progress.id, { agent: text(progress.agent) || "task", description: text(progress.description ?? progress.task) });
     }
   }
-  return [...refs.values()];
+  return [...refs.values()].reverse().sort((a, b) => Number(b.lifecycle) - Number(a.lifecycle));
 }
 function contained(root: string, path: string): boolean { const rel = relative(root, path); return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel)); }
 async function checkedPath(path: string, roots: string[], file: boolean): Promise<Stats | undefined> {
@@ -120,7 +125,7 @@ function activity(entries: Entry[]) {
 }
 
 /** Read referenced, owned child JSONL only; no directory scans or live-state claims. */
-export async function readTranscriptChildren(sessionPath: string, entries: Record<string, unknown>[], roots: string[]): Promise<{ workers: WorkerRow[]; children: SubagentRow[]; childUpdatedAt?: string }> {
+export async function readTranscriptChildren(sessionPath: string, entries: Record<string, unknown>[], roots: string[]): Promise<ChildProjection> {
   const workers: WorkerRow[] = [], children: SubagentRow[] = [];
   const empty = { workers, children };
   const canonicalRoots: string[] = [];
@@ -174,6 +179,8 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
         workers.push({ id, cli: ref.cli, state, turns: ref.turns, queued: 0, model: a.model, lastActivity: a.lastActivity, currentTool: state === "running" && a.pending ? a.latestTool : undefined, outputTail: a.outputTail, observedAt: new Date(opened.mtimeMs).toISOString(), ...(state === "running" && ref.startedAt && ref.startedAt <= opened.mtimeMs ? { elapsedMs: opened.mtimeMs - ref.startedAt } : {}) });
         descriptor.status = state === "running" ? "active" : state === "dead" ? "dead" : !recent ? "unknown" : a.ended || ref.lifecycle && ref.state === "idle" ? "idle" : "unknown";
         descriptor.toolCount = a.toolCount;
+        descriptor.model = a.model;
+        descriptor.currentTool = state === "running" && a.pending ? a.latestTool : undefined;
         await visit(path, childEntries, depth + 1, id);
       } catch { /* unreadable, foreign or concurrently replaced child: omit */ }
       finally { await handle?.close(); }

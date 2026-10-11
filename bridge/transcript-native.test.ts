@@ -38,5 +38,12 @@ test("every native append prefix renders identically to a fresh full parse", asy
       const full = await new TranscriptStore([root]).transcript("p", "s", "omp", session, "working", 400);
       expect(incremental).toEqual(full);
     }
+    const working = await store.transcript("p", "s", "omp", session, "working", 400);
+    const idle = await store.transcript("p", "s", "omp", session, "idle", 400);
+    expect(working.status).toMatchObject({ turnStartedAt: "2026-01-01T00:00:01.000Z", activity: { label: "Waiting for example review", toolName: "wait", startedAt: "2026-01-01T00:00:13.000Z" } });
+    expect(idle.status?.turnStartedAt).toBeUndefined();
+    expect(idle.status?.activity).toBeUndefined();
+    expect(idle.records.find(row => row.id === "call-unresolved")).toMatchObject({ status: "error", output: { text: "interrupted" } });
+    expect(idle.revision).not.toBe(working.revision);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -12,6 +12,8 @@ export function workerRows(value: unknown, ts: string): WorkerRow[] {
     return [{ id, state: state as WorkerRow["state"], turns: num(r.turns), queued: num(r.queued), observedAt: ts,
       ...(r.cli === "good" || r.cli === "fast" ? { cli: r.cli } : {}),
       ...(Number.isFinite(elapsed) && elapsed >= 0 ? { elapsedMs: elapsed } : {}),
+      ...(Number.isFinite(started) && Math.abs(started) <= 8.64e15 ? { turnStartedAt: new Date(started).toISOString() } : {}),
+      ...(text(r.turnMessage) ? { prompt: text(r.turnMessage, 4096) } : {}), trace: rows(r.trace, 6).map(v => text(v, 256)),
       ...(text(r.model) ? { model: text(r.model) } : {}), ...(text(r.lastActivity ?? r.lastIntent) ? { lastActivity: text(r.lastActivity ?? r.lastIntent) } : {}),
       ...(text(r.currentTool) ? { currentTool: text(r.currentTool) } : {}), outputTail: rows(r.outputTail, 3).map(v => text(v, 1024)) }];
   });
@@ -19,7 +21,7 @@ export function workerRows(value: unknown, ts: string): WorkerRow[] {
 export function todoPhases(value: unknown): TodoPhase[] {
   const statuses: Record<string, TodoStatus> = { pending: "pending", in_progress: "active", active: "active", completed: "completed", abandoned: "abandoned", blocked: "blocked" };
   let budget = 128;
-  return rows(value, 24).map(v => { const p = obj(v); return { name: text(p.name, 256), tasks: rows(p.tasks, Math.max(0, budget)).map(v => { budget--; const t = obj(v); return { content: text(t.content), status: statuses[String(t.status)] ?? "pending", ...(text(t.blocker) ? { blocker: text(t.blocker) } : {}) }; }) }; });
+  return rows(value, 24).map(v => { const p = obj(v); return { name: text(p.name, 256), tasks: rows(p.tasks, Math.max(0, budget)).map(v => { budget--; const t = obj(v); return { content: text(t.content), status: statuses[String(t.status)] ?? "pending", ...(text(t.blocker) ? { blocker: text(t.blocker) } : {}), ...(text(t.details) ? { details: text(t.details) } : {}), ...(text(t.notes) ? { notes: text(t.notes) } : {}) }; }) }; });
 }
 export function subagentRows(value: unknown): SubagentRow[] {
   return rows(value).flatMap(v => { const r = obj(v), id = text(r.id ?? r.name, 128); return id ? [{ id, agentType: text(r.agent ?? r.agentType, 128) || "task", description: text(r.assignment ?? r.task ?? r.description), status: text(r.status, 64) || "unknown", nesting: Math.min(6, id.split(".").length - 1), ...(typeof r.toolCount === "number" ? { toolCount: num(r.toolCount) } : {}) }] : []; });
@@ -29,7 +31,8 @@ export function nativeResultRecords(name: string, detailsValue: unknown, id: str
   if (name.startsWith("vibe_") && typeof d.op === "string") {
     const ack = obj(d.send ?? d.spawned), mode = ack.mode, w = obj(d.wait);
     return [{ kind: "vibe", id: `${id}:vibe`, ts, callId: id, op: text(d.op, 32), workers: workerRows(d.screens, ts),
-      ...(text(ack.id) ? { ack: { id: text(ack.id, 128), ...(mode === "turn" || mode === "steered" || mode === "queued" ? { mode } : {}) } } : {}),
+      ...(text(ack.id) ? { ack: { id: text(ack.id, 128), ...(mode === "turn" || mode === "steered" || mode === "queued" ? { mode } : {}), ...(text(ack.jobId) ? { jobId: text(ack.jobId, 128) } : {}), ...(ack.cli === "good" || ack.cli === "fast" ? { cli: ack.cli } : {}) } } : {}),
+      ...(text(obj(d.killed).id) ? { killed: { id: text(obj(d.killed).id, 128), cancelledTurn: obj(d.killed).cancelledTurn === true } } : {}),
       ...(d.wait ? { wait: { settled: rows(w.settled).length, stillRunning: rows(w.stillRunning).length, timedOut: w.timedOut === true, waiting: w.waiting === true } } : {}) }];
   }
   if (name === "todo" && Array.isArray(d.phases)) return [{ kind: "todo", id: `${id}:todo`, ts, phases: todoPhases(d.phases), visibility: "visible" }];

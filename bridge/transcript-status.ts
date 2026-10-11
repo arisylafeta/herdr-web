@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, parse, sep } from "node:path";
 import type { AgentStatus } from "./types";
 import type { TranscriptStatus } from "./transcript-types";
-import { readWorkspaceGitStatus } from "./workspace-inspection";
+import { readWorkspaceGitSummary } from "./workspace-inspection";
 
 type Entry = Record<string, unknown>;
 const object = (value: unknown): Entry => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Entry : {};
@@ -81,17 +81,7 @@ function cachedGit(cwd: string): Git | undefined {
     state.pending = (async () => {
       try {
         if (!await ownedPath(cwd)) { state.value = undefined; return; }
-        const result = await readWorkspaceGitStatus("transcript", cwd);
-        if (!result.isRepo) { state.value = undefined; return; }
-        let staged = 0, unstaged = 0, untracked = 0;
-        for (const file of result.files) {
-          if (file.indexStatus === "?" && file.worktreeStatus === "?") untracked++;
-          else {
-            if (file.indexStatus !== " " && file.indexStatus !== "?") staged++;
-            if (file.worktreeStatus !== " " && file.worktreeStatus !== "?") unstaged++;
-          }
-        }
-        state.value = { branch: result.branch ?? "detached", staged, unstaged, untracked, ahead: result.ahead, behind: result.behind, dirty: staged + unstaged + untracked > 0 };
+        state.value = await readWorkspaceGitSummary(cwd);
       } catch { state.value = undefined; }
       finally { state.at = Date.now(); state.pending = undefined; }
     })();

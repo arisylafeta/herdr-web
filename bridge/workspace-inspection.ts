@@ -931,6 +931,36 @@ export async function readWorkspaceGitStatus(
   };
 }
 
+export type WorkspaceGitSummary = { branch: string; staged: number; unstaged: number; untracked: number; ahead: number; behind: number; dirty: boolean };
+
+/** Native footer counts only: no diffs, content reads or filter execution. */
+export async function readWorkspaceGitSummary(root: string): Promise<WorkspaceGitSummary | undefined> {
+  const canonicalRoot = await realpath(root).catch(() => "");
+  if (!canonicalRoot || !(await isGitRepository(canonicalRoot))) return undefined;
+  const context = await gitRepositoryContext(canonicalRoot);
+  if (!context) return undefined;
+  const result = await runGit(context.root, [
+    "status", "--porcelain=v1", "-z", "-b", "--ahead-behind",
+    "--ignore-submodules=all", "--untracked-files=normal",
+  ]);
+  if (result.code !== 0) throw new WorkspaceInspectionError(500, "git status failed");
+  const records = result.stdout.split("\0");
+  const parsed = parseBranchHeader(records[0] ?? "");
+  let staged = 0, unstaged = 0, untracked = 0;
+  for (let i = 1; i < records.length; i++) {
+    const record = records[i]!;
+    if (record.length < 4) continue;
+    const indexStatus = record[0], worktreeStatus = record[1];
+    if (indexStatus === "?" && worktreeStatus === "?") untracked++;
+    else {
+      if (indexStatus !== " " && indexStatus !== "?") staged++;
+      if (worktreeStatus !== " " && worktreeStatus !== "?") unstaged++;
+    }
+    if (indexStatus === "R" || indexStatus === "C" || worktreeStatus === "R" || worktreeStatus === "C") i++;
+  }
+  return { branch: parsed.branch ?? "detached", staged, unstaged, untracked, ahead: parsed.ahead, behind: parsed.behind, dirty: staged + unstaged + untracked > 0 };
+}
+
 function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
   const data = Buffer.from(value);
   if (data.byteLength <= maxBytes) return { value, truncated: false };

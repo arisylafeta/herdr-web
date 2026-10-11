@@ -114,7 +114,7 @@ test("count, recursion, per-file and total byte caps bound disk reads", async ()
   const large = await fixture(largeEntries);
   const body = JSON.stringify({ type: "session", id: "large", ignored: "x".repeat(6 * 1024 * 1024) }) + "\n";
   for (const id of ["a", "b", "c"]) await writeFile(join(large.childDir, `${id}.jsonl`), body);
-  expect((await readTranscriptChildren(large.path, largeEntries, [large.root])).workers.map(row => row.id)).toEqual(["a", "b"]);
+  expect((await readTranscriptChildren(large.path, largeEntries, [large.root])).workers.map(row => row.id)).toEqual(["c", "b"]);
 });
 
 test("output is bounded, paths and credential assignments scrubbed, torn tail ignored", async () => {
@@ -134,8 +134,25 @@ test("generated task IDs survive compacted results without toolName and missing 
   ];
   const f = await fixture(entries); await child(join(f.childDir, "generated.jsonl"));
   const result = await readTranscriptChildren(f.path, entries, [f.root]);
-  expect(result.children).toMatchObject([{ id: "named", status: "unknown", description: "Named review" }, { id: "generated", status: "active", description: "Generated review" }]);
+  expect(result.children.find(row => row.id === "named")).toMatchObject({ status: "unknown", description: "Named review" });
+  expect(result.children.find(row => row.id === "generated")).toMatchObject({ status: "active", description: "Generated review" });
   expect(result.workers.map(row => row.id)).toEqual(["generated"]);
+});
+
+test("historical task references cannot evict an owned lifecycle worker", async () => {
+  const f = await fixture();
+  let parentId = String(f.entries.at(-1)?.id);
+  const entries = [...f.entries];
+  for (let i = 0; i < 100; i++) {
+    const id = `old-call-${i}`;
+    entries.push({ type: "message", id, parentId, message: { role: "assistant", content: [{ type: "toolCall", id, name: "task", arguments: { tasks: [{ name: `old-${i}`, task: "Historical example" }] } }] } });
+    parentId = id;
+  }
+  await child(join(f.childDir, "review.jsonl"));
+  const result = await readTranscriptChildren(f.path, entries, [f.root]);
+  expect(result.children.find(row => row.id === "review")).toMatchObject({ status: "active" });
+  expect(result.workers.find(row => row.id === "review")).toMatchObject({ currentTool: "read" });
+  expect(result.children.length).toBeLessThanOrEqual(64);
 });
 
 test("observed elapsed stays frozen across polls on unchanged disk", async () => {
