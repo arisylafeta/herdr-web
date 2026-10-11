@@ -13,6 +13,17 @@ test("native cards preserve acknowledgements, messages, todo and async progress"
   expect(records.find(r => r.kind === "todo")).toMatchObject({ phases: [{ tasks: [{ status: "active" }, { status: "blocked", blocker: "Example missing input" }] }] });
   expect(records.find(r => r.kind === "subagents")).toMatchObject({ children: [{ id: "WorkerA.Reviewer", status: "pending", nesting: 1 }] });
 });
+test("worker snapshots keep missing counters unknown and timestamp saved counters", () => {
+  const ts = "2026-01-01T00:00:00Z";
+  const [unknown, saved] = workerRows([{ id: "unknown", state: "idle" }, { id: "saved", state: "running", turns: 4, queued: 3 }], ts);
+  expect(Object.hasOwn(unknown!, "turns")).toBe(false);
+  expect(Object.hasOwn(unknown!, "queued")).toBe(false);
+  expect(saved).toMatchObject({ handle: "saved", turns: 4, queued: 3, turnsObservedAt: ts, queuedObservedAt: ts });
+});
+test("historical task result descriptors distinguish their source from available child details", () => {
+  const record = parseTranscript(entries).records.find(record => record.kind === "subagents");
+  expect(record).toMatchObject({ children: [{ handle: "WorkerA.Reviewer", source: "task-result", childAvailable: false }] });
+});
 test("hidden incoming messages stay hidden and todo visibility matches its canonical source", () => {
   const hidden = { ...entries[8], display: false };
   expect(parseTranscript([...entries.slice(0, 8), hidden]).records.some(r => r.kind === "irc")).toBe(false);

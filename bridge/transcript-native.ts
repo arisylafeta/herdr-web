@@ -9,7 +9,9 @@ export function workerRows(value: unknown, ts: string): WorkerRow[] {
     if (!id || !["starting", "running", "idle", "dead"].includes(String(state))) return [];
     const started = typeof r.turnStartedAt === "number" ? r.turnStartedAt : Date.parse(text(r.turnStartedAt));
     const elapsed = Date.parse(ts) - started;
-    return [{ id, state: state as WorkerRow["state"], turns: num(r.turns), queued: num(r.queued), observedAt: ts,
+    return [{ id, handle: id, state: state as WorkerRow["state"], observedAt: ts,
+      ...(typeof r.turns === "number" && Number.isFinite(r.turns) && r.turns >= 0 ? { turns: r.turns, turnsObservedAt: ts } : {}),
+      ...(typeof r.queued === "number" && Number.isFinite(r.queued) && r.queued >= 0 ? { queued: r.queued, queuedObservedAt: ts } : {}),
       ...(r.cli === "good" || r.cli === "fast" ? { cli: r.cli } : {}),
       ...(Number.isFinite(elapsed) && elapsed >= 0 ? { elapsedMs: elapsed } : {}),
       ...(Number.isFinite(started) && Math.abs(started) <= 8.64e15 ? { turnStartedAt: new Date(started).toISOString() } : {}),
@@ -24,7 +26,7 @@ export function todoPhases(value: unknown): TodoPhase[] {
   return rows(value, 24).map(v => { const p = obj(v); return { name: text(p.name, 256), tasks: rows(p.tasks, Math.max(0, budget)).map(v => { budget--; const t = obj(v); return { content: text(t.content), status: statuses[String(t.status)] ?? "pending", ...(text(t.blocker) ? { blocker: text(t.blocker) } : {}), ...(text(t.details) ? { details: text(t.details) } : {}), ...(text(t.notes) ? { notes: text(t.notes) } : {}) }; }) }; });
 }
 export function subagentRows(value: unknown): SubagentRow[] {
-  return rows(value).flatMap(v => { const r = obj(v), id = text(r.id ?? r.name, 128); return id ? [{ id, agentType: text(r.agent ?? r.agentType, 128) || "task", description: text(r.assignment ?? r.task ?? r.description), status: text(r.status, 64) || "unknown", nesting: Math.min(6, id.split(".").length - 1), ...(typeof r.toolCount === "number" ? { toolCount: num(r.toolCount) } : {}) }] : []; });
+  return rows(value).flatMap(v => { const r = obj(v), id = text(r.id ?? r.name, 128); return id ? [{ id, handle: id, source: "task-result" as const, childAvailable: false, agentType: text(r.agent ?? r.agentType, 128) || "task", description: text(r.assignment ?? r.task ?? r.description), status: text(r.status, 64) || "unknown", nesting: Math.min(6, id.split(".").length - 1), ...(typeof r.toolCount === "number" ? { toolCount: num(r.toolCount) } : {}) }] : []; });
 }
 export function nativeResultRecords(name: string, detailsValue: unknown, id: string, ts: string): TranscriptRecord[] {
   const d = obj(detailsValue);
