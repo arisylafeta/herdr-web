@@ -49,9 +49,9 @@ describe("disk transcript status", () => {
     expect(retry.turnStartedAt).toBeUndefined();
   });
 
-  test("estimates corrected prompt plus assistant output, and drops stale compaction anchors", () => {
-    expect(estimateTranscriptContext([assistant({ input: 100, cacheRead: 200, cacheWrite: 50, output: 900, totalTokens: 9999 })], 2000)?.tokens).toBe(1250);
-    expect(estimateTranscriptContext([assistant({ input: 100 }, { content: [{ type: "text", text: "12345678" }] })], 1000)?.tokens).toBe(102);
+  test("estimates corrected prompt excluding anchor assistant output, and drops stale compaction anchors", () => {
+    expect(estimateTranscriptContext([assistant({ input: 100, cacheRead: 200, cacheWrite: 50, output: 900, totalTokens: 9999 })], 2000)?.tokens).toBe(350);
+    expect(estimateTranscriptContext([assistant({ input: 100 }, { content: [{ type: "text", text: "12345678" }] })], 1000)?.tokens).toBe(100);
     expect(estimateTranscriptContext([
       assistant({ input: 10 }, { contextSnapshot: { promptTokens: 600, historyRewriteTokensRemoved: 100 } }),
       { type: "message", message: { role: "toolResult", content: [{ type: "text", text: "12345678" }] } },

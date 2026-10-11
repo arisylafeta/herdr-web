@@ -117,8 +117,8 @@ export function estimateTranscriptContext(entries: Entry[], window: number): Tra
       const prompt = number(snapshot.promptTokens) ?? (input === undefined ? undefined : input + (number(usage.cacheRead) ?? 0) + (number(usage.cacheWrite) ?? 0));
       if (prompt !== undefined && prompt > 0) {
         tokens = Math.max(0, prompt - (number(snapshot.historyRewriteTokensRemoved) ?? 0));
-        const output = number(usage.output);
-        if (output !== undefined) { tokens += output; continue; }
+        // Native session-stats anchors the prompt and counts only messages AFTER this assistant.
+        continue;
       }
     }
     if (tokens !== undefined) {
