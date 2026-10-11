@@ -1,0 +1,5 @@
+{"type":"session","id":"fixture-parent","version":3,"cwd":"/fixture"}
+{"type":"mode_change","id":"mode","parentId":"fixture-parent","mode":"vibe"}
+{"type":"thinking_level_change","id":"thinking","parentId":"mode","thinkingLevel":"medium"}
+{"type":"custom","id":"spawn","parentId":"thinking","timestamp":"2026-10-11T13:00:00.000Z","customType":"vibe-session-lifecycle","data":{"version":1,"id":"review","ownerId":"Main","parentSessionId":"fixture-parent","action":"spawn","cli":"good","agent":"task","childSessionFile":"review.jsonl","createdAt":1791723600000}}
+{"type":"custom","id":"turn","parentId":"spawn","timestamp":"2026-10-11T13:00:00.001Z","customType":"vibe-session-lifecycle","data":{"version":1,"id":"review","ownerId":"Main","parentSessionId":"fixture-parent","action":"turn-started","turn":1}}

@@ -3,7 +3,7 @@ import { parse } from "postcss";
 import { describe, expect, it } from "vitest";
 
 const tokens = readFileSync(new URL("./tokens.css", import.meta.url), "utf8");
-const styles = ["./index.css", "./components/tool-details.css"]
+const styles = ["./index.css", "./components/tool-details.css", "./components/work-status.css"]
   .map(path => readFileSync(new URL(path, import.meta.url), "utf8"))
   .join("\n");
 const variableNames = (value: string): string[] => [...value.matchAll(/var\(\s*(--[\w-]+)/g)].map(match => match[1]);
@@ -105,6 +105,10 @@ function contrast(first: Color, second: Color): number {
 const surfaces = ["--bg", "--panel", "--card", "--card-2", "--raised", "--code-bg", "--chrome", "--surface", "--surface-raised", "--surface-hover", "--input-bg", "--composer-bg", "--active-overlay", "--subtle-overlay"];
 const textRoles = [
   { token: "--muted", minimum: 4.5 },
+  { token: "--context-ok", minimum: 4.5 },
+  { token: "--context-warn", minimum: 4.5 },
+  { token: "--context-high", minimum: 4.5 },
+  { token: "--context-critical", minimum: 4.5 },
   { token: "--faint", minimum: 3 },
   { token: "--muted-dim", minimum: 3 },
   { token: "--terminal-muted-dim", minimum: 3 },

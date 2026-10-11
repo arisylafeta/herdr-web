@@ -931,6 +931,64 @@ export async function readWorkspaceGitStatus(
   };
 }
 
+export type WorkspaceGitSummary = { branch: string; staged: number; unstaged: number; untracked: number; ahead: number; behind: number; dirty: boolean };
+
+/** Native footer counts only: no diffs, content reads or filter execution. */
+export async function readWorkspaceGitSummary(root: string): Promise<WorkspaceGitSummary | undefined> {
+  const canonicalRoot = await realpath(root).catch(() => "");
+  if (!canonicalRoot || !(await isGitRepository(canonicalRoot))) return undefined;
+  const context = await gitRepositoryContext(canonicalRoot);
+  if (!context) return undefined;
+  const deadline = Date.now() + GIT_TIMEOUT_MS;
+  let inspected = 0;
+  const seen = new Set<string>();
+  const inspect = async (repositoryRoot: string, depth: number): Promise<WorkspaceGitSummary> => {
+    if (++inspected > 64 || depth > 4 || seen.has(repositoryRoot)) throw new WorkspaceInspectionError(429, "git submodule inspection limit");
+    seen.add(repositoryRoot);
+    const command = (args: string[]) => runGit(repositoryRoot, args, true, deadline - Date.now());
+    const result = await command([
+      "status", "--porcelain=v1", "-z", "-b", "--ahead-behind",
+      // Native counts exact moves; do not let Git scan nested filters itself.
+      "--find-renames=100%", "--ignore-submodules=dirty", "--untracked-files=normal",
+    ]);
+    if (result.code !== 0) throw new WorkspaceInspectionError(500, "git status failed");
+    const records = result.stdout.split("\0");
+    const parsed = parseBranchHeader(records[0] ?? "");
+    const alreadyUnstaged = new Set<string>();
+    let staged = 0, unstaged = 0, untracked = 0;
+    for (let i = 1; i < records.length; i++) {
+      const record = records[i]!;
+      if (record.length < 4) continue;
+      const indexStatus = record[0], worktreeStatus = record[1];
+      if (indexStatus === "?" && worktreeStatus === "?") untracked++;
+      else {
+        if (indexStatus !== " " && indexStatus !== "?") staged++;
+        if (worktreeStatus !== " " && worktreeStatus !== "?") { unstaged++; alreadyUnstaged.add(record.slice(3)); }
+      }
+      if (indexStatus === "R" || indexStatus === "C" || worktreeStatus === "R" || worktreeStatus === "C") i++;
+    }
+    const index = await command(["ls-files", "--stage", "-z"]);
+    if (index.code !== 0) throw new WorkspaceInspectionError(500, "git index inspection failed");
+    for (const entry of index.stdout.split("\0")) {
+      if (!entry.startsWith("160000 ")) continue;
+      const path = entry.slice(entry.indexOf("\t") + 1);
+      if (!isSafeRelativePath(path) || alreadyUnstaged.has(path)) continue;
+      const childRoot = resolve(repositoryRoot, path);
+      const info = await lstat(childRoot).catch(() => null);
+      if (!info?.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() ||
+          await realpath(childRoot).catch(() => "") !== childRoot) continue;
+      // Uninitialized gitlinks have no child repository; never climb into the parent.
+      if (!(await lstat(resolve(childRoot, ".git")).catch(() => null))) continue;
+      const childContext = await gitRepositoryContext(childRoot);
+      if (!childContext || childContext.root !== childRoot) continue;
+      const child = await inspect(childRoot, depth + 1);
+      if (child.dirty) { unstaged++; alreadyUnstaged.add(path); }
+    }
+    return { branch: parsed.branch ?? "detached", staged, unstaged, untracked, ahead: parsed.ahead, behind: parsed.behind, dirty: staged + unstaged + untracked > 0 };
+  };
+  return inspect(context.root, 0);
+}
+
 function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
   const data = Buffer.from(value);
   if (data.byteLength <= maxBytes) return { value, truncated: false };

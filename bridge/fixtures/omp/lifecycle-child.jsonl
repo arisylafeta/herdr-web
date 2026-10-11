@@ -1,0 +1,5 @@
+{"type":"session","id":"fixture-child","version":3,"cwd":"/fixture"}
+{"type":"thinking_level_change","id":"thinking","parentId":"fixture-child","thinkingLevel":"medium"}
+{"type":"model_change","id":"model","parentId":"thinking","modelId":"fixture-model","provider":"fixture"}
+{"type":"message","id":"output","parentId":"model","message":{"role":"assistant","model":"fixture-model","content":[{"type":"text","text":"Scrubbed review progress"},{"type":"toolCall","id":"call-task","name":"task","arguments":{"tasks":[{"name":"review.Scope","agent":"reviewer","description":"Scrubbed nested review","task":"Scrubbed assignment"}]}}]}}
+{"type":"custom","id":"start","parentId":"output","customType":"tool_execution_start","data":{"toolCallId":"read-call","toolName":"read","intent":"Reading scrubbed evidence","args":{"path":"/fixture/evidence"}}}

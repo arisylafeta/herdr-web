@@ -1,4 +1,4 @@
-import { ChevronDown, LoaderCircle, ShieldAlert, X } from "lucide-react";
+import { ChevronDown, ShieldAlert, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BridgeReceiver } from "../lib/receiver";
 import { demoImageUrl, demoLongOutput } from "../lib/mock";
@@ -8,6 +8,15 @@ import type { ImageRef, TranscriptRecord, TranscriptResponse } from "../lib/tran
 import { isTranscriptNearBottom, transcriptScrollTop, type ScrollMetrics } from "../lib/transcriptFollow";
 import { Markdown } from "./Markdown";
 import { ToolDetails } from "./ToolDetails";
+import { VibeCard, vibeSummary } from "./VibeCard";
+import { TodoPanel, todoCounts } from "./TodoPanel";
+import { SubagentTree } from "./SubagentTree";
+import { IrcRow } from "./IrcRow";
+import { disclosureId } from "../lib/workState";
+
+function UnknownRecord({ record }: { record: { id: string; kind: string; summary?: string; text?: string } }) {
+  return <section className="transcript-divider" data-record-id={record.id}>Unrecognized {record.kind} event{record.summary || record.text ? ` · ${record.summary ?? record.text}` : ""}</section>;
+}
 
 export interface TranscriptViewProps {
   pane: AgentView;
@@ -36,8 +45,9 @@ export function groupTranscriptRecords(records: TranscriptRecord[]): TranscriptR
 }
 
 type ToolRecord = Extract<TranscriptRecord, { kind: "tool" }>;
-function ToolCard({ record, expanded, toggle, receiver, paneId, session, children, demo }: {
-  record: ToolRecord; expanded: boolean; toggle: () => void; receiver: BridgeReceiver; paneId: string; session?: string; children: React.ReactNode; demo: boolean;
+type ToolSnapshot = Extract<TranscriptRecord, { kind: "vibe" | "subagents" }>;
+function ToolCard({ record, expanded, toggle, receiver, paneId, session, children, demo, detailId, snapshot }: {
+  record: ToolRecord; expanded: boolean; toggle: () => void; receiver: BridgeReceiver; paneId: string; session?: string; children: React.ReactNode; demo: boolean; detailId: string; snapshot?: ToolSnapshot;
 }) {
   const [full, setFull] = useState<{ text: string; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,13 +55,14 @@ function ToolCard({ record, expanded, toggle, receiver, paneId, session, childre
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
   const output = full ?? record.output;
+  const interrupted = record.status === "error" && record.output?.text.trim().toLowerCase() === "interrupted";
   const glyph = /bash|shell|exec/.test(record.name) ? ">_" : /read/.test(record.name) ? "▤" : /write|edit/.test(record.name) ? "✎" : "⚙";
-  return <section className={`tool-card tool-${record.status}`} data-record-id={record.id}>
-    <button className="tool-header" type="button" aria-expanded={expanded} onClick={toggle}>
-      <span className="tool-glyph" aria-hidden="true">{glyph}</span><span className="tool-name">{record.name}</span><span className="tool-subject">{record.subject}</span>
-      <span className="tool-status" aria-label={record.status === "running" ? "Running" : record.status === "ok" ? "Completed" : "Failed"}>{record.status === "running" ? <LoaderCircle className="spinner" aria-hidden="true" /> : record.status === "ok" ? "✓" : "!"}</span><ChevronDown className="tool-chevron" aria-hidden="true" />
+  return <section className={`tool-card tool-${interrupted ? "interrupted" : record.status}`} data-record-id={record.id}>
+    <button className="tool-header" type="button" aria-expanded={expanded} aria-controls={detailId} onClick={toggle}>
+      <span className="tool-glyph" aria-hidden="true">{glyph}</span><span className="tool-name">{record.name}</span><span className="tool-subject">{snapshot?.kind === "vibe" ? vibeSummary(snapshot) : record.summary ?? record.subject}</span>
+      <span className="tool-status" aria-label={interrupted ? "Interrupted" : record.status === "running" ? "Observed running" : record.status === "ok" ? "Completed" : "Failed"}>{interrupted ? "■" : record.status === "running" ? "◷" : record.status === "ok" ? "✓" : "!"}</span><ChevronDown className="tool-chevron" aria-hidden="true" />
     </button>
-    {expanded && <div className="tool-body"><ToolDetails record={record} output={output} />
+    {expanded && <div className="tool-body" id={detailId}>{snapshot ? <>{snapshot.kind === "vibe" ? <VibeCard record={snapshot} scope={detailId} /> : <SubagentTree agents={snapshot.children} scope={detailId} />}<details><summary>Original arguments and output</summary><ToolDetails record={record} output={output} /></details></> : <ToolDetails record={record} output={output} />}
       {output?.truncated && !full && <button type="button" disabled={fetching} onClick={async () => {
         if (demo) { setFull({ text: demoLongOutput, truncated: false }); return; }
         setFetching(true); setError(null);
@@ -75,8 +86,14 @@ export function TranscriptView({ pane, data, reconnecting, loading, output, onEa
   const [atBottom, setAtBottom] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [viewer, setViewer] = useState<{ url: string; alt: string; launcher: HTMLButtonElement } | null>(null);
-  const groups = useMemo(() => groupTranscriptRecords(data?.records ?? []), [data?.records]);
-  const identity = `${pane.paneId}:${session ?? ""}:${data?.sessionId ?? ""}`;
+  const snapshots = useMemo(() => {
+    const rows = new Map<string, ToolSnapshot>();
+    const toolIds = new Set(data?.records.filter(record => record.kind === "tool").map(record => record.id));
+    for (const record of data?.records ?? []) if ((record.kind === "vibe" || record.kind === "subagents") && record.callId && toolIds.has(record.callId)) rows.set(record.callId, record);
+    return rows;
+  }, [data?.records]);
+  const groups = useMemo(() => groupTranscriptRecords((data?.records ?? []).filter(record => !((record.kind === "vibe" || record.kind === "subagents") && record.callId && snapshots.has(record.callId)))), [data?.records, snapshots]);
+  const identity = disclosureId(receiver.id, session ?? "", pane.paneId, data?.sessionId ?? "");
   useLayoutEffect(() => { following.current = true; earlier.current = null; setAtBottom(true); setExpanded(new Set()); setViewer(null); }, [identity]);
   useLayoutEffect(() => { if (reconnecting) earlier.current = null; }, [reconnecting]);
   useLayoutEffect(() => {
@@ -133,10 +150,18 @@ export function TranscriptView({ pane, data, reconnecting, loading, output, onEa
         {data?.hasEarlier && data.records.length >= 400 && <p className="transcript-status" role="status">History window limited to the latest 400 records.</p>}
         {groups.map(group => <div className={`transcript-group ${group[0].kind === "user" ? "transcript-user" : group[0].kind === "divider" ? "transcript-system" : "transcript-assistant"}`} key={group[0].id}>
           {group.map(record => {
+            const recordKey = record.id;
             if (record.kind === "user") return <section key={record.id} data-record-id={record.id}><div className="transcript-role">You</div><div className="transcript-text">{record.text}</div>{images(record.id, record.images)}</section>;
             if (record.kind === "assistant") return <section key={record.id} data-record-id={record.id}><Markdown text={record.text} /></section>;
-            if (record.kind === "tool") return <ToolCard key={`${identity}:${record.id}`} record={record} expanded={expanded.has(record.id)} toggle={() => toggle(record.id)} receiver={receiver} paneId={pane.paneId} session={session} demo={demo}>{images(record.id, record.images)}</ToolCard>;
+            if (record.kind === "tool") return <ToolCard key={`${identity}:${record.id}`} snapshot={snapshots.get(record.id)} detailId={disclosureId(identity, record.id)} record={record} expanded={expanded.has(record.id)} toggle={() => toggle(record.id)} receiver={receiver} paneId={pane.paneId} session={session} demo={demo}>{images(record.id, record.images)}</ToolCard>;
             if (record.kind === "thinking") return <section key={record.id} className="thought-card" data-record-id={record.id}><button className="thought-header" type="button" disabled={record.redacted} aria-expanded={!record.redacted && expanded.has(record.id)} onClick={() => toggle(record.id)}>✧ {record.redacted ? "Thought (redacted)" : "Thought"}{!record.redacted && <ChevronDown aria-hidden="true" />}</button>{!record.redacted && expanded.has(record.id) && <div className="thought-body">{record.text}</div>}</section>;
+            if (record.kind === "irc") return <IrcRow key={record.id} record={record} expanded={expanded.has(record.id)} toggle={() => toggle(record.id)} id={disclosureId(identity, record.id)} />;
+            if (record.kind === "vibe" || record.kind === "todo" || record.kind === "subagents") {
+              const detailId = disclosureId(identity, record.id);
+              const label = record.kind === "vibe" ? `vibe ${vibeSummary(record)}` : record.kind === "todo" ? `todo · ${todoCounts(record.phases).closed}/${todoCounts(record.phases).total} closed · ${todoCounts(record.phases).blocked} blocked` : `task · ${record.children.length} workers observed`;
+              return <section className="tool-card tool-snapshot" key={record.id} data-record-id={record.id}><button type="button" className="tool-header" aria-expanded={expanded.has(record.id)} aria-controls={detailId} onClick={() => toggle(record.id)}><span aria-hidden="true">└</span><strong className="tool-subject">{label}</strong><ChevronDown aria-hidden="true" /></button>{expanded.has(record.id) && <div className="tool-body" id={detailId}>{record.kind === "vibe" ? <VibeCard record={record} scope={detailId} /> : record.kind === "todo" ? <TodoPanel phases={record.phases} /> : <SubagentTree agents={record.children} scope={detailId} />}</div>}</section>;
+            }
+            if (record.kind !== "divider") return <UnknownRecord key={recordKey} record={record} />;
             if (record.variant === "error" || record.variant === "aborted") return <section key={record.id} className={`transcript-failure transcript-failure-${record.variant}`} data-record-id={record.id} role={record.variant === "error" ? "alert" : "status"} aria-label={record.variant === "error" ? "Agent error" : "Agent aborted"}>
               <header><span aria-hidden="true">{record.variant === "error" ? "!" : "■"}</span><strong>{record.label}</strong></header>
               {record.detail && <div className="transcript-failure-detail">{record.detail}</div>}
@@ -150,7 +175,7 @@ export function TranscriptView({ pane, data, reconnecting, loading, output, onEa
     </div>
     {!atBottom && <button className="transcript-jump" type="button" onClick={() => { following.current = true; setAtBottom(true); if (scroll.current) scroll.current.scrollTop = Math.max(0, scroll.current.scrollHeight - scroll.current.clientHeight); }}>Jump to latest ↓</button>}
     {status === "blocked" && <section className="approval-card" aria-label="Agent needs input"><header className="approval-header"><ShieldAlert aria-hidden="true" />Needs input</header><pre className="approval-output" ref={approval}>{approvalOutput || "The agent is waiting for input. Inspect its prompt before responding."}</pre><div className="approval-actions">{["Enter", "Esc", "Up", "Down", "Tab"].map(key => <button type="button" key={key} disabled={readOnly || reconnecting} onClick={() => onSendKeys([key])}>{key}</button>)}</div></section>}
-    <div className="transcript-status" role="status" aria-live="polite">{reconnecting ? "Reconnecting…" : status === "working" ? "Working…" : status === "blocked" ? "Needs input" : status === "done" ? "Done" : status === "idle" ? "Idle" : "Status unknown"}</div>
+    {reconnecting && <div className="transcript-status" role="status" aria-live="polite">Reconnecting…</div>}
     {viewer && <div className="image-viewer" role="dialog" aria-modal="true" aria-label="Image viewer" onClick={() => setViewer(null)}><button className="image-viewer-close" type="button" autoFocus aria-label="Close image viewer" onClick={() => setViewer(null)}><X /></button><img src={viewer.url} alt={viewer.alt} onClick={event => event.stopPropagation()} /></div>}
   </main>;
 }

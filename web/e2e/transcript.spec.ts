@@ -18,7 +18,6 @@ for (const viewport of [{ width: 390, height: 844, name: "phone" }, { width: 768
       await page.goto("/?demo=1&pane=w2:p1");
       await expect(page.getByRole("button", { name: "Chat", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.locator(".tool-running")).toBeVisible();
-      await expect(page.locator(".transcript-status[role=status]")).toHaveText("Working…");
       await expect(page.locator(".approval-card")).toHaveCount(0);
       const suffix = `${theme}-${viewport.name}`;
       await page.screenshot({ path: `${screenshots}/01-chat-${suffix}.png` });

@@ -641,7 +641,7 @@ export function startServer(opts: {
             const image = await transcripts.image(rt.name, pane.agent, session, decodeURIComponent(transcriptMatch[3]!), Number(transcriptMatch[4]));
             return secure(new Response(new Uint8Array(image.bytes), { headers: { "content-type": image.mediaType, "cache-control": "private, max-age=3600" } }));
           }
-          const data = await transcripts.transcript(paneId, rt.name, pane.agent, session, pane.status, Number(url.searchParams.get("limit") ?? 60));
+          const data = await transcripts.transcript(paneId, rt.name, pane.agent, session, pane.status, Number(url.searchParams.get("limit") ?? 60), pane.cwd);
           if (notModified(req.headers.get("if-none-match"), data.revision)) return secure(new Response(null, { status: 304, headers: { etag: data.revision, "cache-control": "no-store" } }));
           return secure(gzipJsonResponse(data, req.headers.get("accept-encoding"), { etag: data.revision }));
         } catch (error) {

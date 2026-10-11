@@ -1,0 +1,40 @@
+import { useState } from "react";
+import type { TranscriptStatus } from "../lib/transcript-types";
+import { contextLevel, tokenLabel } from "../lib/workState";
+import { WorkSheet } from "./WorkSheet";
+export function StatusBar({ status, id }: { status: TranscriptStatus; id: string }) {
+  const [open, setOpen] = useState(false);
+  const [copyLabel, setCopyLabel] = useState("Copy folder");
+  const context = status.context && status.context.window > 0 ? status.context : undefined;
+  const level = context ? contextLevel(context.tokens, context.percent) : "ok";
+  const observed = Date.parse(status.freshness.fileUpdatedAt);
+  const stale = !Number.isFinite(observed) || Date.now() - observed > 30_000;
+  const freshness = stale ? "Stale disk observation" : "Recent disk observation";
+  const copyFolder = async () => {
+    try { await navigator.clipboard.writeText(status.cwd ?? ""); setCopyLabel("Copied"); }
+    catch { setCopyLabel("Copy unavailable"); }
+  };
+  return <>
+    <button type="button" className="native-status-row" title={`${freshness} · ${status.freshness.fileUpdatedAt}`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(true)}>
+      <span className="status-model">{status.model?.name ?? "Model unavailable"}</span>
+      {status.mode && <span className="status-mode">· {status.mode}</span>}
+      <span className={`context-level context-${level}`} aria-label={context ? `Estimated context ${context.percent.toFixed(1)} percent, ${level} pressure` : "Context unavailable"}>{context ? `~${context.percent.toFixed(1)}%/${tokenLabel(context.window)}` : "Context ?"}</span>
+      <span aria-hidden="true">⌄</span>
+    </button>
+    {open && <WorkSheet id={id} title="Session status" close={() => setOpen(false)}>
+      <dl className="status-fields">
+        <dt>Model</dt><dd>{status.model?.name ?? "Unavailable"}</dd>
+        <dt>Provider / ID</dt><dd>{status.model ? `${status.model.provider} / ${status.model.id}` : "Unavailable"}</dd>
+        <dt>Effort / mode</dt><dd>{status.thinking ?? "Unavailable"} · {status.mode ?? "Default"}{status.serviceTier ? ` · ${status.serviceTier}` : ""}</dd>
+        <dt>Turn origin</dt><dd>{status.turnStartedAt ? `${status.turnStartedAt} · disk estimate` : "Unavailable"}</dd>
+        <dt>Activity</dt><dd>{status.activity ? `${status.activity.label} · observed ${status.activity.startedAt}` : "Unavailable"}</dd>
+        <dt>Folder</dt><dd>{status.cwd ?? "Unavailable"}{status.cwd && <button type="button" onClick={() => void copyFolder()}>{copyLabel}</button>}</dd>
+        <dt>Git</dt><dd>{status.git ? `${status.git.branch} *${status.git.unstaged} +${status.git.staged} ?${status.git.untracked}${status.git.ahead ? ` · ${status.git.ahead} ahead` : ""}${status.git.behind ? ` · ${status.git.behind} behind` : ""}` : "Unavailable"}</dd>
+        <dt>Context</dt><dd className={`context-${level}`}>{context ? `${tokenLabel(context.tokens)} / ${tokenLabel(context.window)} · ${context.percent.toFixed(1)}% · ${level} pressure · estimated` : "Unavailable"}</dd>
+        <dt>Workers</dt><dd>{status.workers?.length ?? "Unavailable"} observed</dd>
+        <dt>Cost</dt><dd>Unavailable</dd>
+        <dt>Freshness</dt><dd>{freshness} · {status.freshness.fileUpdatedAt}<br />{status.freshness.childUpdatedAt && `Child: ${status.freshness.childUpdatedAt}`}<br />Live native observer unavailable.</dd>
+      </dl>
+    </WorkSheet>}
+  </>;
+}

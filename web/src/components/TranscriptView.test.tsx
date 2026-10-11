@@ -169,3 +169,34 @@ describe("Markdown safety and code", () => {
     click(container.querySelector(".code-fold")); expect(container.querySelector(".code-content")?.textContent).toContain("line 41");
   });
 });
+
+it("preserves rich disclosure identity across polls and safely renders future events", () => {
+  const vibe: TranscriptRecord = { kind: "vibe", id: "v", ts: "now", op: "send", ack: { id: "worker", mode: "queued" }, workers: [] };
+  const { container, render, data } = mount([vibe]);
+  const header = container.querySelector(".tool-header");
+  const controls = header?.getAttribute("aria-controls");
+  click(header);
+  render({ data: { ...data, revision: "2", records: [{ ...vibe, ack: { id: "worker", mode: "turn" } }] } });
+  expect(container.querySelector(".tool-header")?.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector(".tool-header")?.getAttribute("aria-controls")).toBe(controls);
+  expect(container.textContent).toContain("turn started");
+  const future: TranscriptRecord = JSON.parse('{"kind":"future-kind","id":"future","ts":"now","summary":"Saved observation"}');
+  render({ data: { ...data, records: [future] } });
+  expect(container.textContent).toContain("Saved observation");
+});
+
+it("distinguishes interrupted execution from failed tools without a running spinner", () => {
+  const { container } = mount([{ ...tool, status: "error", output: { text: "interrupted", truncated: false } }]);
+  expect(container.querySelector(".tool-status")?.getAttribute("aria-label")).toBe("Interrupted");
+  expect(container.querySelector(".tool-error")).toBeNull();
+  expect(container.querySelector(".spinner")).toBeNull();
+});
+
+it("joins sourced worker details to the original call without duplicating chronology", () => {
+  const vibe: TranscriptRecord = { kind: "vibe", id: "v", callId: "tool", ts: "now", op: "send", ack: { id: "worker", mode: "queued" }, workers: [] };
+  const { container } = mount([{ ...tool, name: "vibe", status: "ok" }, vibe]);
+  expect(container.querySelectorAll(".tool-card")).toHaveLength(1);
+  click(container.querySelector(".tool-header"));
+  expect(container.textContent).toContain("queued");
+  expect(container.textContent).toContain("Original arguments and output");
+});

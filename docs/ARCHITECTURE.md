@@ -72,11 +72,14 @@ caching and `nosniff`. All three routes use the existing session selector and re
 `sessionId` comes from the first `session` entry in the bounded 64 KiB header read, allowing a
 `title` preamble; file identity is the fallback only when no session header is found there.
 The Herdr environment remains the separate `?session=` selector.
-Custom messages appear only when their `display` flag is explicitly true; other custom events
-are housekeeping, except tool-execution starts, which can supply a running tool record.
-Failed/aborted assistant turns emit `error`/`aborted` dividers even without content. Their
-unresolved calls become errors with `interrupted` output. Only the last unresolved call may
-remain running when an explicit execution-start event is the file's leaf and the pane is working.
+Custom messages appear only when their `display` flag is explicitly true. Persisted IRC incoming
+messages become chronological `irc` records. Vibe results, phased todo snapshots and task progress
+retain bounded typed records, linked to their tool call by `callId` where applicable; successful
+spawn acknowledgements never imply completed workers. Todo HUD visibility applies only to the
+matching canonical source entry and fingerprint. Tool `summary` preserves the native intent.
+Failed/aborted assistant turns emit `error`/`aborted` dividers even without content. Unresolved
+calls are presented as interrupted when the pane is idle/done, not permanently running.
+The latest unresolved persisted start supplies activity only while working/blocked.
 
 Herdr's pane session reference stays in the engine's private map; public snapshots expose only
 `transcript:true` after a safe-read probe. The browser cannot choose a file. Reported paths are
@@ -114,6 +117,53 @@ read returns 503 instead of mixed contents. Changes outside the retained window 
 records; the start guard still covers the beginning of the file. This is not an atomic snapshot against same-UID
 filesystem attackers, consistent with the single-user-host boundary above.
 
+### Disk-derived native working state
+
+The additive `status` block exposes current model display metadata, effort/service tier, mode,
+foreground pane cwd, estimated turn origin, git counts, context estimate and disk worker evidence.
+Model display names and windows come from the read-only omp `model_cache` table; missing metadata
+means an unknown window, never a fabricated limit. Context follows the active branch's latest
+prompt anchor plus bounded estimates for later completed messages, discarding anchors across
+reset/compaction boundaries. It is explicitly `source: "estimate"`: pending prompts, tokenizer
+settings and unseen system/tool context cannot be recovered from disk. Pressure thresholds use
+the earliest of 50%/150k, 70%/270k and 90%/500k tokens.
+
+`status.todo` projects the latest canonical phased plan and its matched HUD visibility from the
+complete retained active branch, independently of the chronological history window. Scrolling
+or 65+ later messages cannot remove a pinned pending plan; branch changes select that branch's
+plan. Visibility participates in the response revision. Compact replay preserves normal assistant
+stop reasons as well as errors/aborts, so a completed turn cannot leave a stale tool activity label.
+
+Git reuses the workspace inspection subprocess/security boundary at the pane cwd through a brief
+stale-while-revalidate cache. Its footer path counts repository-wide porcelain states without diff
+or numstat reads, groups untracked directories and pairs only exact renames like native VCS.
+Gitlink index/HEAD changes count normally; nested worktree dirtiness is inspected separately with
+each child's filters disabled, never through unsafe recursive `git status`. Submodule reads share
+the Git deadline and are bounded to 64 repositories/four depths. Slow Git never blocks transcripts.
+Status and owned-child projections participate in the revision/ETag, including
+freshness, so child and git changes appear without a director append. `turnStartedAt` estimates
+the initiating user/developer message only while working; it is not process uptime.
+
+Child reads follow only lifecycle/call references under `<session without .jsonl>/<id>.jsonl`,
+recursively within bounded depth/count/byte budgets. They require same-UID regular files,
+non-symlink path components, canonical allowed-root containment and checked opened identity.
+Old child evidence cannot establish active work. Current/recent children take priority over dead
+history under the read budget. Descriptor count and byte budgets are separate: bounded referenced
+children skipped for bytes still appear as unknown/unavailable. An eight-entry, two-second projection
+cache bounds repeat reads. Child `id` and `parentId` are opaque session/ancestry identities;
+`handle` is the display name and is not a key. Distinct dotted and nested handles cannot collide.
+Every descriptor labels `source` and `childAvailable`; successful reads are distinct from historical
+task results and inaccessible files. Exact authoritative ancestor/child paths are redacted before
+excerpt clipping, including URI/colon-prefixed occurrences.
+
+Unknown child turns/queued counters are absent, not zero. Supported fields merge independently:
+saved-wall counts retain their own `turnsObservedAt`/`queuedObservedAt` while fresher child activity
+can update `observedAt`. The bridge never replaces an entire wall row with incomplete evidence.
+No directory-wide historical-session discovery, credentials, drafts, extension observer or terminal
+scraping feeds this projection. Streaming text, queues, exact runtime timers, IRC relay observations
+and retry/approval state remain unavailable: use the terminal surface.
+
+
 ## Browser chat view
 
 Transcript-capable omp panes open in Chat; the topbar switches between Chat and the existing
@@ -147,9 +197,40 @@ status colors and terminal ANSI colors derive from those palettes. Light/dark/sy
 prepaint bootstrap, theme-color metadata, safe-area padding and reduced-motion support remain.
 Contrast tests resolve source-derived sRGB/OKLab mixes and overlays across both themes: secondary
 text meets 4.5:1 and decorative text meets 3:1 on all tested shell/transcript surfaces.
-`?demo=1` provides all record kinds, live/error tools, specialized file/diff/command anatomy,
-failed/aborted turns, approval state, images, long output and 172 history records for isolated
+`?demo=1` provides all record kinds, observed-running/error tools, specialized file/diff/command anatomy,
+failed/aborted turns, approval state, images, long output and paginated history for isolated
 browser checks without a Herdr connection.
+
+### Native work presentation
+
+Disk-backed Vibe, incoming IRC, phased todo and task snapshots stay at their chronological
+positions. Worker lifecycle labels describe observations: idle means reusable, never completed;
+historical running snapshots do not animate or tick. Call-linked Vibe/task details share the original
+tool disclosure, without a duplicate card, while preserving arguments/output. Unknown kinds use a fallback.
+
+Pinned Todo uses `status.todo`, the canonical complete-branch plan and HUD visibility, independently
+of transcript pagination; older bridges fall back to their available chronological todo snapshots.
+Worker/subagent keys and disclosures use opaque identities, while `handle` is display-only.
+Unknown turn/queue counters render as an em dash; zero is displayed only when supplied by evidence.
+Subagent details distinguish their child/task/lifecycle source and mark the child transcript
+unavailable only when the bridge explicitly reports `childAvailable: false`.
+
+Chat reserves a compact dock above the composer: current pane activity and the existing Esc Stop,
+one combined Work details disclosure, and one model/mode/context status disclosure. Status opens a
+focus-trapped read-only sheet with folder Copy, git file counts and disk freshness. In short
+viewports telemetry folds into Work details. Tab containment includes visible enabled summaries,
+form controls and nonnegative tabindex targets, excluding hidden/closed details and folded controls.
+Only the topmost sheet consumes Escape before runtime controls and restores launcher focus.
+Disclosure identities include bridge, Herdr session, pane and omp session; polling preserves
+expansion, while changing ownership resets it.
+
+Context pressure uses the earliest percentage or absolute threshold: 50%/150k, 70%/270k,
+90%/500k. Semantic tokens supply both themes and accessible pressure labels. The current-turn
+clock ticks locally once per second only when active and visible; callback-ref attachment observes
+timestamps arriving after initial loading. Its disk origin remains estimated.
+No native observer, streaming wall, retry countdown, relay delivery or exact context is promised.
+Demo transport supports `context=ok|warn|high|critical|unknown` and `oldBridge=1` compatibility scenarios.
+
 
 ## Security
 
