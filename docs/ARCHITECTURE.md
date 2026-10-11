@@ -180,16 +180,16 @@ status colors and terminal ANSI colors derive from those palettes. Light/dark/sy
 prepaint bootstrap, theme-color metadata, safe-area padding and reduced-motion support remain.
 Contrast tests resolve source-derived sRGB/OKLab mixes and overlays across both themes: secondary
 text meets 4.5:1 and decorative text meets 3:1 on all tested shell/transcript surfaces.
-`?demo=1` provides all record kinds, live/error tools, specialized file/diff/command anatomy,
-failed/aborted turns, approval state, images, long output and 172 history records for isolated
+`?demo=1` provides all record kinds, observed-running/error tools, specialized file/diff/command anatomy,
+failed/aborted turns, approval state, images, long output and paginated history for isolated
 browser checks without a Herdr connection.
 
 ### Native work presentation
 
 Disk-backed Vibe, incoming IRC, phased todo and task snapshots stay at their chronological
 positions. Worker lifecycle labels describe observations: idle means reusable, never completed;
-historical running snapshots do not animate or tick. Generic tools use the bridge summary and
-retain original arguments/output. Unknown record kinds render an informational fallback.
+historical running snapshots do not animate or tick. Call-linked Vibe/task details share the original
+tool disclosure, without a duplicate card, while preserving arguments/output. Unknown kinds use a fallback.
 
 Chat reserves a compact dock above the composer: current pane activity and the existing Esc Stop,
 one combined Work details disclosure, and one model/mode/context status disclosure. Status opens a
@@ -202,7 +202,7 @@ Context pressure uses the earliest percentage or absolute threshold: 50%/150k, 7
 90%/500k. Semantic tokens supply both themes and accessible pressure labels. The current-turn
 clock ticks locally once per second only when active and visible; its disk origin is estimated.
 No native observer, streaming wall, retry countdown, relay delivery or exact context is promised.
-Demo transport supports `context=ok|warn|high|critical` and `oldBridge=1` compatibility scenarios.
+Demo transport supports `context=ok|warn|high|critical|unknown` and `oldBridge=1` compatibility scenarios.
 
 
 ## Security
