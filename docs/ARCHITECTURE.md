@@ -128,6 +128,12 @@ reset/compaction boundaries. It is explicitly `source: "estimate"`: pending prom
 settings and unseen system/tool context cannot be recovered from disk. Pressure thresholds use
 the earliest of 50%/150k, 70%/270k and 90%/500k tokens.
 
+`status.todo` projects the latest canonical phased plan and its matched HUD visibility from the
+complete retained active branch, independently of the chronological history window. Scrolling
+or 65+ later messages cannot remove a pinned pending plan; branch changes select that branch's
+plan. Visibility participates in the response revision. Compact replay preserves normal assistant
+stop reasons as well as errors/aborts, so a completed turn cannot leave a stale tool activity label.
+
 Git reuses the workspace inspection subprocess/security boundary at the pane cwd through a brief
 stale-while-revalidate cache. Its footer path counts repository-wide porcelain states without diff
 or numstat reads, groups untracked directories and pairs only exact renames like native VCS.
@@ -141,13 +147,21 @@ the initiating user/developer message only while working; it is not process upti
 Child reads follow only lifecycle/call references under `<session without .jsonl>/<id>.jsonl`,
 recursively within bounded depth/count/byte budgets. They require same-UID regular files,
 non-symlink path components, canonical allowed-root containment and checked opened identity.
-Old child evidence cannot establish active work. Lifecycle children take priority over historical
-task references under the child budget; an eight-entry, two-second projection cache bounds repeat
-reads. Every worker snapshot carries `observedAt`; freshness separates director and child updates.
-Missing child details retain an unknown descriptor. No directory-wide historical-session discovery,
-credentials, drafts, extension observer or terminal scraping feeds this projection. Native streaming
-text, queues, exact runtime timers, IRC relay observations and retry/approval state remain unavailable:
-use the terminal surface.
+Old child evidence cannot establish active work. Current/recent children take priority over dead
+history under the read budget. Descriptor count and byte budgets are separate: bounded referenced
+children skipped for bytes still appear as unknown/unavailable. An eight-entry, two-second projection
+cache bounds repeat reads. Child `id` and `parentId` are opaque session/ancestry identities;
+`handle` is the display name and is not a key. Distinct dotted and nested handles cannot collide.
+Every descriptor labels `source` and `childAvailable`; successful reads are distinct from historical
+task results and inaccessible files. Exact authoritative ancestor/child paths are redacted before
+excerpt clipping, including URI/colon-prefixed occurrences.
+
+Unknown child turns/queued counters are absent, not zero. Supported fields merge independently:
+saved-wall counts retain their own `turnsObservedAt`/`queuedObservedAt` while fresher child activity
+can update `observedAt`. The bridge never replaces an entire wall row with incomplete evidence.
+No directory-wide historical-session discovery, credentials, drafts, extension observer or terminal
+scraping feeds this projection. Streaming text, queues, exact runtime timers, IRC relay observations
+and retry/approval state remain unavailable: use the terminal surface.
 
 
 ## Browser chat view
