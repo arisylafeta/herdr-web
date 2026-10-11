@@ -275,3 +275,24 @@ test("newly discovered current descendants precede dead root byte consumers", as
   expect(result.children).toHaveLength(4);
   expect(result.children.filter(row => !row.childAvailable)).toHaveLength(1);
 });
+
+test("current descendants displace unread historical descriptors at the global count cap", async () => {
+  const entries: Entry[] = [header, lifecycle("crew", "root", "Crew")];
+  let parentId = "crew";
+  for (let index = 0; index < 63; index++) {
+    const spawn = `spawn${index}`, dead = `dead${index}`;
+    entries.push(lifecycle(spawn, parentId, `old${index}`), lifecycle(dead, spawn, `old${index}`, "tombstone")); parentId = dead;
+  }
+  const f = await fixture(entries);
+  await child(join(f.childDir, "Crew.jsonl"), [{ type: "session", id: "child" }, lifecycle("current", "child", "Current"), lifecycle("run", "current", "Current", "turn-started")]);
+  await mkdir(join(f.childDir, "Crew")); await child(join(f.childDir, "Crew/Current.jsonl"));
+  for (let index = 0; index < 63; index++) await child(join(f.childDir, `old${index}.jsonl`));
+  const result = await readTranscriptChildren(f.path, entries, [f.root]);
+  const current = result.workers.find(row => row.handle === "Crew.Current");
+  expect(current?.currentTool).toBe("read");
+  expect(current?.parentId).toBe(result.workers.find(row => row.handle === "Crew")!.id);
+  expect(result.children).toHaveLength(64);
+  expect(result.workers).toHaveLength(64);
+  expect(result.children.filter(row => row.handle?.startsWith("old"))).toHaveLength(62);
+  expect(result.children.every(row => !row.parentId || result.children.some(parent => parent.id === row.parentId))).toBe(true);
+});

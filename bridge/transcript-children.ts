@@ -151,7 +151,7 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
     try { const canonical = await realpath(root); if (canonical === resolve(root) && await checkedPath(canonical, [canonical], false)) canonicalRoots.push(canonical); } catch { /* unavailable root */ }
   }
   try { if (!sessionPath.endsWith(".jsonl") || !(await checkedPath(sessionPath, canonicalRoots, true))) return empty; } catch { return empty; }
-  let bytes = 0, count = 0, latestMtime = 0;
+  let bytes = 0, readAttempts = 0, latestMtime = 0;
   const seen = new Set<string>(), now = Date.now();
   type Branch = { path: string; entries: Entry[]; depth: number; parentId?: string; ancestry: string[]; paths: string[]; handle?: string };
   type Candidate = { ref: Reference; path: string; info?: Stats; priority: number; depth: number; parentId?: string; ancestry: string[]; id: string; displayHandle: string; paths: string[]; descriptor: SubagentRow };
@@ -170,9 +170,15 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
     }
     candidates.sort((a, b) => b.priority - a.priority);
     for (const { ref, path, info, priority } of candidates) {
-      if (count >= MAX_CHILDREN) return;
       if (seen.has(path)) continue;
-      seen.add(path); count++;
+      if (children.length >= MAX_CHILDREN) {
+        // Only unread candidates can be displaced; read ancestors keep their identity.
+        const displaced = pending.reduce<Candidate | undefined>((lowest, candidate) => !lowest || candidate.priority < lowest.priority ? candidate : lowest, undefined);
+        if (!displaced || displaced.priority >= priority) continue;
+        pending.splice(pending.indexOf(displaced), 1);
+        children.splice(children.indexOf(displaced.descriptor), 1);
+      }
+      seen.add(path);
       const ancestry = [...parent.ancestry, ref.id];
       const id = createHash("sha256").update(JSON.stringify([sessionPath, ancestry])).digest("hex");
       const displayHandle = parent.handle && !ref.id.startsWith(`${parent.handle}.`) ? `${parent.handle}.${ref.id}` : ref.id;
@@ -189,7 +195,8 @@ export async function readTranscriptChildren(sessionPath: string, entries: Recor
       const { ref, path, info, depth, parentId, ancestry, id, displayHandle, paths, descriptor } = pending.shift()!;
       let handle;
       try {
-        if (!info || bytes >= MAX_BYTES || info.size > MAX_FILE_BYTES || info.size > MAX_BYTES - bytes) continue;
+        if (!info || readAttempts >= MAX_CHILDREN || bytes >= MAX_BYTES || info.size > MAX_FILE_BYTES || info.size > MAX_BYTES - bytes) continue;
+        readAttempts++;
         handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
         const opened = await handle.stat();
         if (opened.dev !== info.dev || opened.ino !== info.ino || opened.uid !== process.getuid?.() || !opened.isFile() || opened.size !== info.size) continue;
