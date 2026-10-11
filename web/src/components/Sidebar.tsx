@@ -107,8 +107,8 @@ export function Sidebar({
               <span>H</span>
               <i />
             </span>
-            <span className="brand-name">Herdr</span>
-            <span className="brand-stage">WEB</span>
+            <span className="brand-name">omp</span>
+            <span className="brand-stage">mobile</span>
           </div>
           <button className="icon-button sidebar-close" onClick={onMobileClose} title="Close sidebar">
             <PanelLeftClose />
@@ -207,7 +207,7 @@ export function Sidebar({
             <Settings />
             <span>Settings</span>
           </button>
-          <div className="bridge-mode" title={mode === "demo" ? "Using the built-in demo transport" : "Connected to the Herdr bridge"}>
+          <div className="bridge-mode" title={mode === "demo" ? "Using the built-in demo transport" : "Connected to the omp mobile bridge"}>
             <span className={`bridge-mode-dot mode-${mode}`} />
             <span>{mode === "demo" ? "Demo" : mode === "live" ? "Live" : mode === "offline" ? "Offline" : "Connecting"}</span>
           </div>

@@ -97,7 +97,7 @@ export function decidePush(payload: PushPayload, _hasVisibleClient: boolean): Pu
   if (payload.type === "clear") return { kind: "clear", tag };
   return {
     kind: "show",
-    title: payload.title ?? "Herdr Web",
+    title: payload.title ?? "omp mobile",
     body: payload.body ?? "",
     tag,
     paneId,

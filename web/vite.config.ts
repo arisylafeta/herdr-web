@@ -55,9 +55,9 @@ export default defineConfig({
       injectRegister: false,
       registerType: "autoUpdate",
       manifest: {
-        name: "Herdr Web",
-        short_name: "Herdr",
-        description: "Monitor and drive durable Herdr agent sessions",
+        name: "omp mobile",
+        short_name: "omp mobile",
+        description: "omp mobile: monitor and drive durable Herdr agent sessions",
         display: "standalone",
         start_url: "/",
         scope: "/",

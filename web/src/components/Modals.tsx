@@ -419,7 +419,7 @@ export function SettingsModal({
           </span>
           <span className="settings-update-actions">
             {update?.releaseAvailable && update.latestUrl && (
-              <a href={update.latestUrl} target="_blank" rel="noreferrer" title={`Open Herdr Web ${update.latest} release`}>
+              <a href={update.latestUrl} target="_blank" rel="noreferrer" title={`Open omp mobile ${update.latest} release`}>
                 <ExternalLink />
               </a>
             )}
@@ -433,7 +433,7 @@ export function SettingsModal({
             <Sun />
             <span>
               <strong>Appearance</strong>
-              <small>Choose how Herdr Web looks</small>
+              <small>Choose how omp mobile looks</small>
             </span>
           </span>
           <span className="theme-control" aria-label="Color theme">

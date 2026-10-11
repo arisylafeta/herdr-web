@@ -7,7 +7,7 @@ installed PWA / native app (may be hosted elsewhere)
         |
         | receiver selects machine origin + local session
         v
-host-local Herdr Web bridge (Bun, loopback only)
+host-local omp mobile bridge (Bun, loopback only)
         |  optional PwaAssets adapter -> bundled web/dist
         |
         | RPC over Unix socket + native terminal controller stream
@@ -153,7 +153,7 @@ browser checks without a Herdr connection.
 
 ## Security
 
-- Run Herdr Web only on a single-user workstation (or inside an owner-isolated VM/container).
+- Run omp mobile only on a single-user workstation (or inside an owner-isolated VM/container).
   Loopback prevents network ingress; it does not authenticate separate OS accounts on a shared host.
 - Bind the bridge to loopback only.
 - Expose it with `tailscale serve`; do not use public funneling.

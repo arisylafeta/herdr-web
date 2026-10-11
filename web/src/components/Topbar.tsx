@@ -71,7 +71,7 @@ export function Topbar({
           </div>
         )}
         {bridges.length > 1 && (
-          <label className="device-select" title="Switch Herdr device">
+          <label className="device-select" title="Switch omp mobile device">
             <Network />
             <select value={bridgeId} onChange={(event) => onBridgeChange(event.target.value)}>
               {bridges.map((bridge) => (
@@ -95,7 +95,7 @@ export function Topbar({
         <button className="icon-button" onClick={onRefresh} title="Refresh device">
           <RefreshCw />
         </button>
-        <div className={`connection-indicator${bridgeConnected ? " is-connected" : ""}`} title={bridgeConnected ? "Herdr bridge connected" : "Herdr bridge disconnected"}>
+        <div className={`connection-indicator${bridgeConnected ? " is-connected" : ""}`} title={bridgeConnected ? "omp mobile bridge connected" : "omp mobile bridge disconnected"}>
           <span />
         </div>
         <div className="topbar-more-wrap">

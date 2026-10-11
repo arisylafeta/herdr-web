@@ -196,7 +196,7 @@ export function Composer({ pane, tab, bridgeId, session, busy, running, readOnly
       </div>
       <div className="composer-context-row">
         <span>{pane ? pane.cwd : "No pane selected"}</span>
-        <span className="composer-context-branch">{pane?.workspaceLabel ?? "Herdr"}</span>
+        <span className="composer-context-branch">{pane?.workspaceLabel ?? "omp mobile"}</span>
       </div>
     </div>
   );
