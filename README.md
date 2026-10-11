@@ -1,10 +1,10 @@
-# omp mobile
+# Herdr Web
 
-omp mobile is the host-side companion for remote Herdr clients. It runs beside Herdr,
+Herdr Web is the host-side companion for remote Herdr clients. It runs beside Herdr,
 translates a bounded HTTP and WebSocket API into Herdr socket operations, and can publish that API
 privately through Tailscale Serve.
 
-Native client repository: [omp mobile](https://github.com/benkraus/herdr-mobile).
+Native client repository: [Herdr Mobile](https://github.com/benkraus/herdr-mobile).
 
 The repository is packaged as a Herdr plugin. Its registered plugin ID is `herdr.control`, retained
 for compatibility with existing installations and configuration directories.
@@ -13,7 +13,7 @@ for compatibility with existing installations and configuration directories.
 
 - A responsive browser control surface, optionally served by the bridge itself.
 - A native-client API used by the separate
-  [omp mobile](https://github.com/benkraus/herdr-mobile) application.
+  [Herdr Mobile](https://github.com/benkraus/herdr-mobile) application.
 - Live terminal frames with device-sized terminal control.
 - Workspace, worktree, tab, pane, and multi-session navigation.
 - Persisted device receivers, so one installed PWA can switch between host-local bridges.
@@ -38,7 +38,7 @@ Tailscale Serve (tailnet-only reverse proxy)
           |
           | loopback HTTP
           v
-omp mobile bridge (Bun, 127.0.0.1:8787 by default)
+Herdr Web bridge (Bun, 127.0.0.1:8787 by default)
           |
           | Herdr RPC over Unix socket
           v
@@ -145,7 +145,7 @@ herdr plugin action invoke status --plugin herdr.control
 herdr plugin action invoke url --plugin herdr.control
 ```
 
-The URL action prints the address to open in a browser or enter in omp mobile, normally similar to:
+The URL action prints the address to open in a browser or enter in Herdr Mobile, normally similar to:
 
 ```text
 https://your-machine.your-tailnet.ts.net:8787
@@ -258,7 +258,7 @@ read-only access.
 
 ### Web Push
 
-omp mobile generates a persistent VAPID key pair in its private state directory on first start. Open
+Herdr Web generates a persistent VAPID key pair in its private state directory on first start. Open
 Settings, enable Push notifications, and use the Test button to verify delivery.
 
 To supply an existing key pair instead, generate keys with:

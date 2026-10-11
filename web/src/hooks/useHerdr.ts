@@ -155,7 +155,7 @@ export function useHerdr(receiver: BridgeReceiver) {
         setMode(failureMode);
         pushNotice("error", hasConnectedRef.current
           ? "Bridge connection lost. Actions will fail until it reconnects."
-          : "omp mobile bridge is unavailable. Retrying the connection.");
+          : "Herdr bridge is unavailable. Retrying the connection.");
       } finally {
         if (snapshotRequestRef.current?.controller === controller) {
           snapshotRequestRef.current = null;
@@ -590,11 +590,11 @@ export function useHerdr(receiver: BridgeReceiver) {
     } else if (update.lastCheckSucceeded === false) {
       pushNotice("error", "The update check could not reach the configured repository.");
     } else if (update.bridgeStale) {
-      pushNotice("info", "The omp mobile bridge was updated on disk and needs a restart.");
+      pushNotice("info", "The bridge was updated on disk and needs a restart.");
     } else if (update.releaseAvailable) {
-      pushNotice("info", `omp mobile ${update.latest} is available.`);
+      pushNotice("info", `Herdr Web ${update.latest} is available.`);
     } else {
-      pushNotice("success", "omp mobile is up to date.");
+      pushNotice("success", "Herdr Web is up to date.");
     }
   }, [mode, pushNotice, receiver, runAction]);
 

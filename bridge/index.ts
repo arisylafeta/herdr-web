@@ -80,8 +80,8 @@ const currentVersion = (
 const updateStore = new UpdateStateStore(cfg);
 await updateStore.load();
 
-// Release checks are opt-in for forks. Leaving COLLIE_UPDATE_REPO empty avoids reporting upstream
-// releases as omp mobile updates while this project has no canonical release repository.
+// Release checks are opt-in for forks. Leaving COLLIE_UPDATE_REPO empty avoids reporting Collie
+// releases as Herdr Web updates while this project has no canonical release repository.
 const updateRepo = process.env.COLLIE_UPDATE_REPO?.trim() || "";
 const updateMonitor = new UpdateMonitor({
   enabled: Boolean(updateRepo),
@@ -100,7 +100,7 @@ const updateMonitor = new UpdateMonitor({
       tag: "herdr-control:update",
       // No command in the body — the tap opens Settings (target below), and the update banner / linked
       // release page carry the location-independent Herdr actions. Keeps this off the cwd-dependent path.
-      title: "omp mobile update available",
+      title: "Herdr Web update available",
       body: `Version ${latest} is available`,
       target: "settings",
     }),

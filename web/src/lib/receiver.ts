@@ -18,7 +18,7 @@ export interface BridgeProfile {
   id: string;
   /** Human-readable machine name. */
   label: string;
-  /** Exact HTTP(S) origin of the host-local omp mobile bridge. */
+  /** Exact HTTP(S) origin of the host-local Herdr Web bridge. */
   baseUrl: string;
   /** Built-in deployment default. It is always present and cannot be removed. */
   builtIn?: boolean;
@@ -250,7 +250,7 @@ export class BridgeReceiver {
     return await this.request("/api/push-test", {
       method: "POST",
       body: JSON.stringify({
-        title: "omp mobile test",
+        title: "Herdr Web test",
         body: "Push notifications are working on this device.",
       }),
     });

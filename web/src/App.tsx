@@ -137,13 +137,13 @@ export default function App() {
         {update?.bridgeStale ? (
           <div className="update-banner update-banner-restart" role="status">
             <RefreshCw />
-            <span>The omp mobile bridge changed on disk and needs a restart.</span>
+            <span>The bridge changed on disk and needs a restart.</span>
             <button onClick={() => setSettingsOpen(true)}>Review</button>
           </div>
         ) : update?.releaseAvailable ? (
           <div className="update-banner" role="status">
             <RefreshCw />
-            <span>omp mobile {update.latest} is available.</span>
+            <span>Herdr Web {update.latest} is available.</span>
             {update.latestUrl && (
               <a href={update.latestUrl} target="_blank" rel="noreferrer">
                 View release

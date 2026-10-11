@@ -35,7 +35,7 @@ export const demoSnapshot: SnapshotResponse = {
     {
       paneId: "w3:p1",
       workspaceId: "w3",
-      workspaceLabel: "omp-mobile",
+      workspaceLabel: "collie",
       workspaceNumber: 3,
       tabId: "w3:t1",
       name: "release-check",
@@ -93,7 +93,7 @@ export const demoSnapshot: SnapshotResponse = {
     {
       workspaceId: "w3",
       number: 3,
-      label: "omp-mobile",
+      label: "collie",
       focused: false,
       activeTabId: "w3:t1",
       tabCount: 1,
@@ -125,7 +125,7 @@ export const demoSnapshot: SnapshotResponse = {
 const demoOutput = `Codex  ·  gpt-5.4  ·  full access
 ~/Code/t3-herdr
 
-I inspected T3 Code, Herdr, and omp mobile's current protocol boundaries.
+I inspected T3 Code, Herdr, and Collie's current protocol boundaries.
 
 The bridge should stay outside Herdr's terminal panes so it survives detach,
 client disconnects, and Herdr restarts. The browser can then treat each
@@ -154,7 +154,7 @@ export const demoPaneById: Record<string, PaneReadResponse> = Object.fromEntries
       text:
         pane.paneId === "w1:p1"
           ? demoOutput
-          : `${pane.agent} · ${pane.workspaceLabel}\n${pane.cwd}\n\nSession is ${pane.status}.\n\nThis preview is using the local demo transport until the omp mobile bridge is reachable.`,
+          : `${pane.agent} · ${pane.workspaceLabel}\n${pane.cwd}\n\nSession is ${pane.status}.\n\nThis preview is using the local demo transport until the Herdr bridge is reachable.`,
       truncated: false,
       revision: 1,
     },
