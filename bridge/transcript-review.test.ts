@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activeTranscriptBranch, TranscriptStore } from "./transcript";
 import { deriveTranscriptStatus } from "./transcript-status";
+import type { TodoPhase } from "./transcript-types";
 
 type Entry = Record<string, unknown>;
 const roots: string[] = [];
 const ts = "2026-10-11T12:00:00.000Z";
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 const header: Entry = { type: "session", id: "root" };
-const phases = [{ name: "Ship", tasks: [{ content: "Verify behavior", status: "pending" }] }];
+const phases: TodoPhase[] = [{ name: "Ship", tasks: [{ content: "Verify behavior", status: "pending" }] }];
 const todo: Entry = { type: "custom", customType: "user_todo_edit", id: "plan", parentId: "root", timestamp: ts, data: { phases } };
 const hud = (id: string, parentId: string, visibility: string): Entry => ({ type: "custom", customType: "todo_hud_state", id, parentId, timestamp: ts, data: { sourceEntryId: "plan", fingerprint: JSON.stringify(phases), visibility } });
 const line = (entry: Entry) => JSON.stringify(entry) + "\n";
